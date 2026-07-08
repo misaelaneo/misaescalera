@@ -1,0 +1,45 @@
+/* Grove palette (PRD §10.1): #2A5D09 / #69AB3C / #AED36C / #E9EBED */
+
+:root {
+  --color-background: #f6f7f8;
+  --color-surface: rgba(255, 255, 255, 0.55);
+  --color-surface-solid: #e9ebed;
+  --color-text-primary: #171c17;
+  --color-text-secondary: #57625a;
+  --color-border: rgba(23, 28, 23, 0.1);
+
+  /* Light mode: deep green for strong contrast on light backgrounds */
+  --color-accent: #2a5d09;
+  --color-accent-hover: #234d08;
+  --color-accent-contrast: #ffffff;
+  --color-accent-text: #2a5d09;
+  --color-accent-soft: rgba(42, 93, 9, 0.12);
+
+  --color-error: #b3261e;
+  --color-success: #2a5d09;
+
+  --glass-blur: 14px;
+  --shadow-soft: 0 8px 32px rgba(23, 28, 23, 0.08);
+  --nav-size: 76px;
+}
+
+:root[data-theme='dark'] {
+  --color-background: #101410;
+  --color-surface: rgba(255, 255, 255, 0.06);
+  --color-surface-solid: #1a201a;
+  --color-text-primary: #edf1ec;
+  --color-text-secondary: #9fac9f;
+  --color-border: rgba(237, 241, 236, 0.12);
+
+  /* Dark mode: mid/light green pops against dark; deep green is too low-contrast */
+  --color-accent: #69ab3c;
+  --color-accent-hover: #7dbf50;
+  --color-accent-contrast: #0c130a;
+  --color-accent-text: #aed36c;
+  --color-accent-soft: rgba(174, 211, 108, 0.14);
+
+  --color-error: #f2856d;
+  --color-success: #aed36c;
+
+  --shadow-soft: 0 8px 32px rgba(0, 0, 0, 0.4);
+}

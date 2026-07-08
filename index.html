@@ -1,92 +1,38 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Misael Escalera</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-      background: #0f0f0f;
-      color: #f0f0f0;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .container {
-      max-width: 640px;
-      padding: 48px 32px;
-      text-align: center;
-    }
-
-    .name {
-      font-size: 2.5rem;
-      font-weight: 700;
-      letter-spacing: -0.5px;
-      margin-bottom: 8px;
-    }
-
-    .title {
-      font-size: 1.1rem;
-      color: #888;
-      margin-bottom: 40px;
-    }
-
-    .divider {
-      width: 40px;
-      height: 2px;
-      background: #333;
-      margin: 0 auto 40px;
-    }
-
-    .bio {
-      font-size: 1rem;
-      line-height: 1.8;
-      color: #bbb;
-      margin-bottom: 48px;
-    }
-
-    .links {
-      display: flex;
-      justify-content: center;
-      gap: 24px;
-      flex-wrap: wrap;
-    }
-
-    .links a {
-      color: #f0f0f0;
-      text-decoration: none;
-      font-size: 0.9rem;
-      letter-spacing: 0.5px;
-      border-bottom: 1px solid #444;
-      padding-bottom: 2px;
-      transition: border-color 0.2s, color 0.2s;
-    }
-
-    .links a:hover {
-      color: #fff;
-      border-color: #888;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1 class="name">Misael Escalera</h1>
-    <p class="title">Product Manager</p>
-    <div class="divider"></div>
-    <p class="bio">
-      Product Manager at Vector Solutions focused on learning management systems.
-      I work at the intersection of user needs, business goals, and technical delivery.
-    </p>
-    <nav class="links">
-      <a href="mailto:misa.escalera@vectorsolutions.com">Email</a>
-      <a href="https://linkedin.com/in/misaelescalera" target="_blank" rel="noopener">LinkedIn</a>
-      <a href="https://github.com/misaelaneo" target="_blank" rel="noopener">GitHub</a>
-    </nav>
-  </div>
-</body>
-</html> 
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Misael Escalera — Personal Portfolio</title>
+    <meta
+      name="description"
+      content="Portfolio of Misael Escalera, featuring professional experience, selected work, media reviews, personal background, and contact information."
+    />
+    <meta property="og:title" content="Misael Escalera — Personal Portfolio" />
+    <meta
+      property="og:description"
+      content="Portfolio of Misael Escalera, featuring professional experience, selected work, media reviews, personal background, and contact information."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://misaescalera.com" />
+    <script>
+      // Apply saved/system theme before first paint to avoid a flash
+      (function () {
+        try {
+          var saved = localStorage.getItem('theme');
+          var theme =
+            saved === 'light' || saved === 'dark'
+              ? saved
+              : window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light';
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
