@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@emailjs/browser": "^4.4.1",
+    "@paper-design/shaders-react": "^0.0.77",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
