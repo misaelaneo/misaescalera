@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { PaperTexture } from '@paper-design/shaders-react';
 import { MailIcon, PhoneIcon, ResumeIcon, DownloadIcon } from './components/icons';
 
@@ -54,28 +54,53 @@ const PAGES: Record<PageKey, { label: string; title: string; body: string }> = {
 
 const PAGE_ORDER: PageKey[] = ['experience', 'strategy', 'execution', 'ai', 'marketing'];
 
+/** Portrait shown on the desk. Hovering a dock icon swaps to a matching pose. */
+type HoverKey = 'resume' | 'linkedin' | 'phone' | 'email';
+
+const PHOTOS: Record<HoverKey, string> = {
+  resume: '/assets/photo-resume.png',
+  linkedin: '/assets/photo-linkedin.png',
+  phone: '/assets/photo-phone.png',
+  email: '/assets/photo-email.png',
+};
+
+// Word revealed in the hover label for each contact icon.
+const HOLO_LABELS: Record<HoverKey, string> = {
+  resume: 'ABOUT ME',
+  linkedin: 'LINKEDIN',
+  phone: 'CALL ME',
+  email: 'EMAIL ME',
+};
+
+// Intrinsic size of the portrait (misa.png). Used to reproduce the paper
+// shader's `fit: contain` + `scale` geometry so the contact hint can be pinned
+// to the visible portrait's bottom-right corner.
+const PORTRAIT_W = 1027;
+const PORTRAIT_H = 1532;
+
 type InkChar = { c: string; style: CSSProperties };
 
-/** Deterministic per-character "typewriter ink" jitter, ported from the design. */
-function ink(word: string, size: number, seed: number): InkChar[] {
+/**
+ * Deterministic per-character "typewriter ink" jitter, ported from the design.
+ * When `offsetChars` is null every glyph is jittered; otherwise only glyphs
+ * present in that string are nudged, so a word can mix clean and hand-set letters.
+ */
+function ink(word: string, size: number, seed: number, offsetChars: string | null): InkChar[] {
   return word.split('').map((c, i) => {
     const r1 = Math.abs(Math.sin(i * 127.1 + seed) * 43758.5453) % 1;
-    const r2 = Math.abs(Math.sin(i * 269.5 + seed * 1.7 + 13.3) * 24634.63) % 1;
     const r3 = Math.abs(Math.sin(i * 89.4 + seed * 2.3 + 5.1) * 15731.74) % 1;
-    const px = size * (0.92 + r3 * 0.2);
+    const offset = offsetChars == null ? true : offsetChars.includes(c);
+    const px = size * (offset ? 0.92 + r3 * 0.2 : 1);
     return {
       c,
       style: {
         display: 'inline-block',
-        fontFamily: "'Remingtoned','Space Mono',monospace",
-        fontWeight: 400,
+        fontFamily: "'Spectral SC','Space Mono',monospace",
+        fontWeight: 500,
         lineHeight: 1,
         fontSize: `min(${Math.round(px)}px, ${(px / 14).toFixed(2)}vw)`,
-        color: '#1c1a17',
-        transform: `translateY(${((r1 - 0.5) * size * 0.22).toFixed(1)}px) rotate(${(
-          (r2 - 0.5) *
-          8
-        ).toFixed(1)}deg)`,
+        color: '#161311',
+        transform: offset ? `translateY(${((r1 - 0.5) * size * 0.22).toFixed(1)}px)` : 'none',
         textShadow: '0 0 1px rgba(28,26,23,.35)',
       },
     };
@@ -84,11 +109,36 @@ function ink(word: string, size: number, seed: number): InkChar[] {
 
 export default function App() {
   const [page, setPage] = useState<PageKey | null>(null);
+  const [hover, setHover] = useState<HoverKey | null>(null);
 
-  const nameRow1 = useMemo(() => ink('Misa', 46, 3.7), []);
-  const nameRow2 = useMemo(() => ink('Escalera', 76, 8.2), []);
+  const enter = (key: HoverKey) => {
+    setHover(key);
+  };
+  const leave = () => setHover(null);
+
+  // Margins from the viewport edges to the visible portrait's edges, so the
+  // holo card can sit at the photo's bottom-right corner at any screen size.
+  const [photoInset, setPhotoInset] = useState({ right: 0, bottom: 0 });
+
+  useEffect(() => {
+    const compute = () => {
+      const W = window.innerWidth;
+      const H = window.innerHeight;
+      const fit = Math.min(W / PORTRAIT_W, H / PORTRAIT_H);
+      const dispW = PORTRAIT_W * fit * PAPER.scale;
+      const dispH = PORTRAIT_H * fit * PAPER.scale;
+      setPhotoInset({ right: (W - dispW) / 2, bottom: (H - dispH) / 2 });
+    };
+    compute();
+    window.addEventListener('resize', compute);
+    return () => window.removeEventListener('resize', compute);
+  }, []);
+
+  const nameRow1 = useMemo(() => ink('(MISA)', 92, 3.7, ''), []);
+  const nameRow2 = useMemo(() => ink('Escalera', 32, 8.2, 'Eea'), []);
 
   const p = page ? PAGES[page] : null;
+  const photoSrc = hover ? PHOTOS[hover] : '/assets/misa.png';
 
   return (
     <div className="screen">
@@ -101,7 +151,7 @@ export default function App() {
           style={{ width: '100%', height: '100%' }}
         />
       </div>
-      {/* Portrait rendered through the same paper texture, fades out on a page */}
+      {/* Portrait rendered through the same paper texture; swaps on hover, fades out on a page */}
       <div
         style={{
           position: 'absolute',
@@ -113,7 +163,7 @@ export default function App() {
       >
         <PaperTexture
           {...PAPER}
-          image="/assets/misa.png"
+          image={photoSrc}
           colorBack="#ffffff"
           colorFront={PAPER_COLOR}
           style={{ width: '100%', height: '100%' }}
@@ -122,6 +172,27 @@ export default function App() {
 
       {!page && (
         <div className="home">
+          {/* Grainy-ink displacement filter applied to the name */}
+          <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden>
+            <filter id="inkgrain" x="-20%" y="-20%" width="140%" height="140%">
+              <feTurbulence
+                type="fractalNoise"
+                baseFrequency="0.35"
+                numOctaves="2"
+                seed="7"
+                result="noise"
+              />
+              <feDisplacementMap in="SourceGraphic" in2="noise" scale="1" result="disp" />
+              <feColorMatrix
+                in="noise"
+                type="matrix"
+                values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0.5 0.5 0.5 0 -0.35"
+                result="alphaNoise"
+              />
+              <feComposite in="disp" in2="alphaNoise" operator="out" />
+            </filter>
+          </svg>
+
           <div
             className="name"
             style={{
@@ -129,21 +200,25 @@ export default function App() {
               transformOrigin: 'left top',
             }}
           >
-            <div style={{ display: 'flex' }}>
-              {nameRow1.map((ch, i) => (
-                <span key={i} style={ch.style}>
-                  {ch.c}
-                </span>
-              ))}
+            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+              <div style={{ display: 'flex' }}>
+                {nameRow1.map((ch, i) => (
+                  <span key={i} style={ch.style}>
+                    {ch.c}
+                  </span>
+                ))}
+              </div>
+              <div style={{ margin: '0 0 8px 4px' }}>
+                <div style={{ display: 'flex' }}>
+                  {nameRow2.map((ch, i) => (
+                    <span key={i} style={ch.style}>
+                      {ch.c}
+                    </span>
+                  ))}
+                </div>
+                <div className="tagline">product leader</div>
+              </div>
             </div>
-            <div style={{ display: 'flex', margin: '-6px 0 0 26px' }}>
-              {nameRow2.map((ch, i) => (
-                <span key={i} style={ch.style}>
-                  {ch.c}
-                </span>
-              ))}
-            </div>
-            <div className="tagline">product leader</div>
           </div>
 
           <nav className="nav">
@@ -172,6 +247,8 @@ export default function App() {
                 e.preventDefault();
                 setPage('experience');
               }}
+              onMouseEnter={() => enter('resume')}
+              onMouseLeave={leave}
             >
               <ResumeIcon />
             </a>
@@ -181,15 +258,37 @@ export default function App() {
               title="LinkedIn"
               target="_blank"
               rel="noreferrer"
+              onMouseEnter={() => enter('linkedin')}
+              onMouseLeave={leave}
             >
               <span className="in-badge">in</span>
             </a>
-            <a href="tel:+13526424703" className="dock-link" title="(352) 642-4703">
+            <a
+              href="tel:+13526424703"
+              className="dock-link"
+              title="(352) 642-4703"
+              onMouseEnter={() => enter('phone')}
+              onMouseLeave={leave}
+            >
               <PhoneIcon />
             </a>
-            <a href="mailto:misaelaneo@gmail.com" className="dock-link" title="misaelaneo@gmail.com">
+            <a
+              href="mailto:misaelaneo@gmail.com"
+              className="dock-link"
+              title="misaelaneo@gmail.com"
+              onMouseEnter={() => enter('email')}
+              onMouseLeave={leave}
+            >
               <MailIcon />
             </a>
+          </div>
+
+          <div
+            className={`contact-hint${hover || true ? ' is-on' : ''}`}
+            style={{ right: photoInset.right - 8, bottom: photoInset.bottom - 58 }}
+            aria-hidden
+          >
+            {hover ? HOLO_LABELS[hover] : 'HI :)'}
           </div>
         </div>
       )}

@@ -75,16 +75,16 @@ a:hover {
 
 .name {
   position: absolute;
-  left: clamp(28px, 4vw, 60px);
-  top: clamp(20px, 3.5vh, 44px);
+  left: clamp(16px, 2vw, 32px);
+  top: clamp(40px, 6vh, 80px);
+  filter: url(#inkgrain);
 }
 
 .tagline {
-  margin: 2px 0 0 42%;
-  transform: rotate(-3deg);
-  font: 400 15px/1 'Courier Prime', monospace;
-  letter-spacing: 0.24em;
-  color: #1c1a17;
+  margin: 4px 0 0 22px;
+  font: 400 14px/1 'Courier Prime', monospace;
+  letter-spacing: 0.2em;
+  color: #0a0807;
   white-space: nowrap;
 }
 
@@ -123,7 +123,30 @@ a:hover {
   color: #6f8296;
 }
 
-/* Bottom dock of icon links */
+/* ---------- Contact hover label ---------- */
+.contact-hint {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
+  color: #263d89;
+  font: 600 clamp(24px, 3.2vw, 50px) / 0.95 'Nanum Pen Script', cursive;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transform: rotate(-5deg);
+  transform-origin: center;
+  mix-blend-mode: multiply;
+  z-index: 2;
+  isolation: isolate;
+}
+
+.contact-hint.is-on {
+  opacity: 1;
+}
+
+/* Bottom dock of icon links. No gap between links: each link carries its own
+   horizontal padding so the hover hit-areas are contiguous — hovering between
+   icons never falls back to the default portrait. */
 .dock {
   position: absolute;
   left: 50%;
@@ -131,15 +154,16 @@ a:hover {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: clamp(16px, 2.6vw, 26px);
+  gap: 0;
 }
 
 .dock-link {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
   height: 44px;
+  padding: 0 clamp(14px, 2vw, 21px);
   color: #1c1a17;
   transition: transform 0.15s ease, color 0.15s ease;
 }
@@ -237,6 +261,13 @@ a:hover {
   .home,
   .page {
     animation: none;
+  }
+  .holo-float,
+  .holo-foil,
+  .holo-glitter,
+  .holo-glare,
+  .holo-noise {
+    animation: none !important;
   }
   *,
   *::before,
