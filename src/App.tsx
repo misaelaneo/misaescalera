@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { PaperTexture } from '@paper-design/shaders-react';
 import { MailIcon, PhoneIcon, ResumeIcon, DownloadIcon } from './components/icons';
 
@@ -78,6 +86,51 @@ const HOLO_LABELS: Record<HoverKey, string> = {
 const PORTRAIT_W = 1027;
 const PORTRAIT_H = 1532;
 
+/** Bio copy, hand-written onto the desk on first load. One entry per paragraph. */
+const SUMMARY = [
+  'Structural Engineer turned Product Lead.',
+  'I build at the intersection of software, users, design, and a little bit of product magic.',
+];
+
+/** Words in SUMMARY rendered bold (matched ignoring case/punctuation). */
+const EMPHASIS = new Set(['software', 'users', 'design']);
+
+/** Hand-drawn sparkles scattered around "product magic". Positions are in `em`
+ *  so they track the bio's font size; each twinkles slowly and out of sync.
+ *  Kept to the left of and below the phrase — the −6° tilt rotates the right
+ *  and top edges up into the line above, so those zones aren't safe. */
+const MAGIC_STARS = [
+  { top: '0.3em', left: '-0.95em', size: '0.52em', dur: '1.0s', delay: '0s', rot: '-8deg' },
+  { bottom: '-0.7em', left: '4%', size: '0.4em', dur: '0.85s', delay: '0.4s', rot: '12deg' },
+  { bottom: '-0.9em', left: '40%', size: '0.34em', dur: '1.05s', delay: '0.55s', rot: '-14deg' },
+  { bottom: '-0.7em', right: '10%', size: '0.44em', dur: '0.9s', delay: '0.28s', rot: '7deg' },
+  { bottom: '-0.2em', right: '-0.8em', size: '0.48em', dur: '0.95s', delay: '0.15s', rot: '5deg' },
+] as const;
+
+/** Availability badge copy + LinkedIn destination. */
+const BADGE_TEXT = 'Now looking to join a talented team!';
+const LINKEDIN_URL = 'https://www.linkedin.com/in/misaelescalera/';
+
+/** Multipoint "seal" star used to clip the holographic availability badge.
+ *  A ring of shallow points (outer 50% / inner 43% of the box) → a circle
+ *  edged with little spikes. Built once as a CSS polygon() string. */
+const BADGE_STAR_POINTS = 22;
+const BADGE_STAR_CLIP = (() => {
+  const pts: string[] = [];
+  for (let i = 0; i < BADGE_STAR_POINTS * 2; i += 1) {
+    const r = i % 2 === 0 ? 50 : 43;
+    const a = (Math.PI / BADGE_STAR_POINTS) * i - Math.PI / 2;
+    pts.push(`${(50 + r * Math.cos(a)).toFixed(2)}% ${(50 + r * Math.sin(a)).toFixed(2)}%`);
+  }
+  return `polygon(${pts.join(',')})`;
+})();
+
+/* Intro choreography (ms / s): portrait fades, then dock + nav, then the bio writes itself. */
+const INTRO_PORTRAIT_S = 1.0; // portrait fade duration
+const INTRO_UI_DELAY_S = 1.0; // dock + nav start
+const INTRO_WRITE_DELAY_S = 1.7; // bio writing starts
+const INTRO_CHAR_S = 0.022; // per-character writing pace
+
 type InkChar = { c: string; style: CSSProperties };
 
 /**
@@ -107,35 +160,157 @@ function ink(word: string, size: number, seed: number, offsetChars: string | nul
   });
 }
 
+type SumWordData = {
+  word: string;
+  delays: number[];
+  bold: boolean;
+  magic: boolean;
+};
+
+/** One bio word: a leading space (when not first) plus its per-character
+ *  "pen stroke" spans. `bold` words get the emphasis class. */
+function SumWord({ data, space }: { data: SumWordData; space: boolean }) {
+  return (
+    <span>
+      {space && ' '}
+      <span className={`sum-word${data.bold ? ' sum-em' : ''}`}>
+        {data.word.split('').map((c, k) => (
+          <span
+            key={k}
+            className="sum-ch"
+            style={{ animationDelay: `${data.delays[k].toFixed(3)}s` }}
+          >
+            {c}
+          </span>
+        ))}
+      </span>
+    </span>
+  );
+}
+
 export default function App() {
   const [page, setPage] = useState<PageKey | null>(null);
   const [hover, setHover] = useState<HoverKey | null>(null);
+
+  // First-load intro: portrait → dock/nav → hand-written bio → sparkles. Once
+  // it has played, the flag flips so returning from a page renders everything
+  // static. (The timer is armed below, once `starsDelay` is known.)
+  const [introPlayed, setIntroPlayed] = useState(false);
 
   const enter = (key: HoverKey) => {
     setHover(key);
   };
   const leave = () => setHover(null);
 
-  // Margins from the viewport edges to the visible portrait's edges, so the
-  // holo card can sit at the photo's bottom-right corner at any screen size.
-  const [photoInset, setPhotoInset] = useState({ right: 0, bottom: 0 });
+  // Holographic availability badge: the cursor drives the foil's glare and a
+  // subtle 3D tilt via CSS vars (no re-render); on leave it eases back flat.
+  const badgeRef = useRef<HTMLAnchorElement>(null);
+  const onBadgeMove = (e: ReactPointerEvent<HTMLAnchorElement>) => {
+    const el = badgeRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width;
+    const py = (e.clientY - r.top) / r.height;
+    el.style.setProperty('--px', `${(px * 100).toFixed(1)}%`);
+    el.style.setProperty('--py', `${(py * 100).toFixed(1)}%`);
+    el.style.setProperty('--rx', `${((0.5 - py) * 64).toFixed(1)}deg`);
+    el.style.setProperty('--ry', `${((px - 0.5) * 64).toFixed(1)}deg`);
+    el.style.setProperty('--on', '1');
+  };
+  const onBadgeLeave = () => {
+    const el = badgeRef.current;
+    if (!el) return;
+    el.style.setProperty('--rx', '0deg');
+    el.style.setProperty('--ry', '0deg');
+    el.style.setProperty('--on', '0');
+  };
 
-  useEffect(() => {
+  // The blue contact hint sits just below the portrait's bottom-right corner,
+  // over the light paper where its multiply "ink" blend reads well. On short
+  // screens (e.g. 1080p) the shrunken portrait's corner lands near the centred
+  // dock, so we keep the hint at that same (over-paper) height and instead
+  // shift it right into the paper margin just enough to clear the dock — never
+  // up into the dark portrait, where multiply would hide it.
+  const hintRef = useRef<HTMLDivElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
+  const [hintPos, setHintPos] = useState({ right: 0, bottom: 0 });
+
+  useLayoutEffect(() => {
     const compute = () => {
       const W = window.innerWidth;
       const H = window.innerHeight;
       const fit = Math.min(W / PORTRAIT_W, H / PORTRAIT_H);
       const dispW = PORTRAIT_W * fit * PAPER.scale;
       const dispH = PORTRAIT_H * fit * PAPER.scale;
-      setPhotoInset({ right: (W - dispW) / 2, bottom: (H - dispH) / 2 });
+
+      // Natural spot: pinned to the photo's bottom-right corner, sitting just
+      // below the photo so it's over paper.
+      const naturalRight = (W - dispW) / 2 - 8;
+      const bottom = (H - dispH) / 2 - 58;
+
+      // Don't let the hint's left edge cross into the centred dock. Measure the
+      // dock and the hint's actual width (varies per label) for an exact floor.
+      const hintW = hintRef.current?.offsetWidth ?? 0;
+      const dockW = dockRef.current?.offsetWidth ?? 0;
+      const dockRightFromEdge = (W - dockW) / 2; // dock's right edge → viewport right
+      const gap = 20;
+      // Largest `right` (px from viewport right) that still keeps
+      // hint.left ≥ dock.right + gap.
+      const maxRight = dockRightFromEdge - gap - hintW;
+      const right = Math.min(naturalRight, maxRight);
+
+      setHintPos({ right, bottom });
     };
     compute();
     window.addEventListener('resize', compute);
     return () => window.removeEventListener('resize', compute);
-  }, []);
+  }, [hover]);
 
   const nameRow1 = useMemo(() => ink('(MISA)', 92, 3.7, ''), []);
   const nameRow2 = useMemo(() => ink('Escalera', 32, 8.2, 'Eea'), []);
+
+  // Bio split into paragraphs → words → characters, each with a staggered
+  // "pen stroke" delay. The clock runs continuously across paragraphs; spaces
+  // (and the gap between paragraphs) advance it too, reading as the pen lifting.
+  // Words are tagged: `bold` for emphasis, `magic` for the "product magic"
+  // phrase we sprinkle twinkling stars around.
+  const summaryParas = useMemo(() => {
+    const base = (w: string) => w.replace(/[^a-zA-Z]/g, '').toLowerCase();
+    let i = 0;
+    return SUMMARY.map((para) => {
+      const words = para.split(' ').map((word) => {
+        const delays = word
+          .split('')
+          .map((_, k) => INTRO_WRITE_DELAY_S + (i + k) * INTRO_CHAR_S);
+        i += word.length + 1; // +1: the space advances the pen too
+        return { word, delays, bold: EMPHASIS.has(base(word)), magic: false };
+      });
+      // Tag the trailing "product magic" phrase (only where it actually ends a
+      // paragraph, so "Product Lead." in the intro line isn't matched).
+      const n = words.length;
+      if (n >= 2 && base(words[n - 2].word) === 'product' && base(words[n - 1].word) === 'magic') {
+        words[n - 2].magic = true;
+        words[n - 1].magic = true;
+      }
+      return words;
+    });
+  }, []);
+
+  // When the stars should fade in on first load: just after the final glyph of
+  // "magic" has been written.
+  const starsDelay = useMemo(() => {
+    const lastPara = summaryParas[summaryParas.length - 1];
+    const lastWord = lastPara[lastPara.length - 1];
+    return lastWord.delays[lastWord.delays.length - 1] + 0.4;
+  }, [summaryParas]);
+
+  // Hold the intro state until the last thing (the sparkles' 0.6s fade) has
+  // finished, so `.intro` gating outlives every intro animation.
+  useEffect(() => {
+    const total = (starsDelay + 0.6 + 0.1) * 1000;
+    const t = setTimeout(() => setIntroPlayed(true), total);
+    return () => clearTimeout(t);
+  }, [starsDelay]);
 
   const p = page ? PAGES[page] : null;
   const photoSrc = hover ? PHOTOS[hover] : '/assets/misa.png';
@@ -153,6 +328,7 @@ export default function App() {
       </div>
       {/* Portrait rendered through the same paper texture; swaps on hover, fades out on a page */}
       <div
+        className={introPlayed ? undefined : 'portrait-intro'}
         style={{
           position: 'absolute',
           inset: 0,
@@ -171,7 +347,7 @@ export default function App() {
       </div>
 
       {!page && (
-        <div className="home">
+        <div className={`home${introPlayed ? '' : ' intro'}`}>
           {/* Grainy-ink displacement filter applied to the name */}
           <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden>
             <filter id="inkgrain" x="-20%" y="-20%" width="140%" height="140%">
@@ -221,6 +397,62 @@ export default function App() {
             </div>
           </div>
 
+          {/* Hand-written summary below the name. */}
+          <div className="summary">
+            {summaryParas.map((words, pi) => {
+              const magicStart = words.findIndex((w) => w.magic);
+              const lead = magicStart === -1 ? words : words.slice(0, magicStart);
+              const magic = magicStart === -1 ? [] : words.slice(magicStart);
+              return (
+                <p className="sum-para" key={pi}>
+                  {lead.map((w, wi) => (
+                    <SumWord key={wi} data={w} space={wi > 0} />
+                  ))}
+                  {magic.length > 0 && (
+                    <>
+                      {' '}
+                      <span className="magic">
+                        {magic.map((w, wi) => (
+                          <SumWord key={wi} data={w} space={wi > 0} />
+                        ))}
+                        <span
+                          className="magic-stars"
+                          style={{ '--stars-delay': `${starsDelay.toFixed(2)}s` } as CSSProperties}
+                          aria-hidden
+                        >
+                          {MAGIC_STARS.map((s, si) => (
+                            <span
+                              key={si}
+                              className="star"
+                              style={{
+                                top: s.top,
+                                left: s.left,
+                                right: s.right,
+                                bottom: s.bottom,
+                                width: s.size,
+                                height: s.size,
+                                animationDuration: s.dur,
+                                animationDelay: s.delay,
+                                ['--rot' as string]: s.rot,
+                              } as CSSProperties}
+                            >
+                              <svg viewBox="0 0 24 24" width="100%" height="100%">
+                                <path
+                                  d="M12 0.5C12.9 7 12.2 8.1 23.5 12C12.4 15.7 13 16.9 12 23.5C11 17 11.7 15.8 0.5 12C11.6 8.2 11.1 7 12 0.5Z"
+                                  fill="currentColor"
+                                />
+                              </svg>
+                            </span>
+                          ))}
+                        </span>
+                      </span>
+                    </>
+                  )}
+                </p>
+              );
+            })}
+          </div>
+
           <nav className="nav">
             {PAGE_ORDER.map((key) => (
               <a
@@ -238,7 +470,7 @@ export default function App() {
             ))}
           </nav>
 
-          <div className="dock">
+          <div className="dock" ref={dockRef}>
             <a
               href="#experience"
               className="dock-link"
@@ -284,12 +516,32 @@ export default function App() {
           </div>
 
           <div
+            ref={hintRef}
             className={`contact-hint${hover || true ? ' is-on' : ''}`}
-            style={{ right: photoInset.right - 8, bottom: photoInset.bottom - 58 }}
+            style={{ right: hintPos.right, bottom: hintPos.bottom }}
             aria-hidden
           >
             {hover ? HOLO_LABELS[hover] : 'HI :)'}
           </div>
+
+          {/* Holographic "open to work" badge → LinkedIn (new tab). */}
+          <a
+            ref={badgeRef}
+            className="badge"
+            style={{ ['--star' as string]: BADGE_STAR_CLIP } as CSSProperties}
+            href={LINKEDIN_URL}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`${BADGE_TEXT} Opens LinkedIn.`}
+            onPointerMove={onBadgeMove}
+            onPointerLeave={onBadgeLeave}
+          >
+            <span className="badge-inner">
+              <span className="badge-foil" aria-hidden />
+              <span className="badge-glare" aria-hidden />
+              <span className="badge-text">{BADGE_TEXT}</span>
+            </span>
+          </a>
         </div>
       )}
 
@@ -308,7 +560,12 @@ export default function App() {
           <div className="page-title">{p.title}</div>
           <div className="page-body">{p.body}</div>
           {page === 'experience' && (
-            <a href="#resume-doc" className="resume-btn">
+            <a
+              href="https://docs.google.com/document/d/1X7S3SYq6Kx-deva0lSc41CSdRhlYmHB9kca7n2BzM14/edit?usp=sharing"
+              className="resume-btn"
+              target="_blank"
+              rel="noreferrer"
+            >
               <DownloadIcon />
               download résumé (google doc)
             </a>

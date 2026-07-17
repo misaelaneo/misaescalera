@@ -88,6 +88,123 @@ a:hover {
   white-space: nowrap;
 }
 
+/* Hand-written summary, mirroring the nav on the left of the portrait.
+   The right edge keeps the same gap from the photo as the nav does
+   (photo half-width ≈ 24.2vh on height-bound screens, plus 4vw of air). */
+.summary {
+  position: absolute;
+  /* Horizontally centred in the column between the screen's left edge and
+     the portrait's left edge (photo left = 50% - min(36vw, 24.135vh),
+     from the contain-fit geometry; we sit at half of that). Nudged left a
+     little to offset the right-heavy look of the ragged paragraphs. */
+  left: calc(25% - min(18vw, 12.07vh) - 3vw);
+  max-width: 30ch; /* keeps the paragraph a narrow hand-written block */
+  top: clamp(160px, 21vh, 240px);
+  transform: translateX(-50%) rotate(-6deg);
+  transform-origin: center top;
+  font: 400 clamp(20px, min(2.4vw, 2.8vh), 32px) / 1.5 'Nanum Pen Script', cursive;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #161311;
+  mix-blend-mode: multiply;
+  filter: url(#inkgrain); /* same grainy-ink displacement as the name */
+}
+
+.sum-para + .sum-para {
+  margin-top: 0.7em; /* gap between the two bio lines */
+}
+
+.sum-word {
+  display: inline-block; /* keeps words unbroken while chars animate */
+}
+
+/* Emphasised words. Nanum Pen Script ships a single weight, so we thicken the
+   ink ourselves (faux weight + a hair of stroke) for a hand-pressed look. */
+.sum-em {
+  font-weight: 700;
+  -webkit-text-stroke: 0.4px currentColor;
+}
+
+.sum-ch {
+  display: inline-block;
+}
+
+/* ---------- "product magic" sparkles ---------- */
+.magic {
+  position: relative;
+  display: inline-block; /* keeps the phrase together + anchors the stars */
+}
+
+.magic-stars {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  color: #161311;
+}
+
+.star {
+  position: absolute;
+  display: block;
+  transform: rotate(var(--rot, 0deg));
+  animation: twinkle 1s ease-in-out infinite;
+  will-change: opacity, transform;
+}
+
+.star svg {
+  display: block;
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: rotate(var(--rot, 0deg)) scale(0.65);
+  }
+  50% {
+    opacity: 1;
+    transform: rotate(var(--rot, 0deg)) scale(1.05);
+  }
+}
+
+/* ---------- First-load intro ----------
+   Portrait fades in, dock + nav follow, then the bio hand-writes itself.
+   Durations/delays mirror the INTRO_* constants in App.tsx. */
+
+.portrait-intro {
+  animation: homein 1s ease both;
+}
+
+.intro .nav,
+.intro .dock,
+.intro .contact-hint,
+.intro .badge {
+  animation: homein 0.6s ease 1s both;
+}
+
+@keyframes inkwrite {
+  from {
+    opacity: 0;
+    transform: translateY(3px) rotate(3deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Per-character delays are set inline in App.tsx */
+.intro .sum-ch {
+  opacity: 0;
+  animation: inkwrite 0.3s ease both;
+}
+
+/* On first load, hold the sparkles back until "magic" has been written
+   (--stars-delay is set inline from the last glyph's timing). */
+.intro .magic-stars {
+  opacity: 0;
+  animation: homein 0.6s ease var(--stars-delay, 4.3s) both;
+}
+
 /* Nav list, sitting to the right of centre */
 .nav {
   position: absolute;
@@ -129,7 +246,9 @@ a:hover {
   pointer-events: none;
   opacity: 0;
   color: #263d89;
-  font: 600 clamp(24px, 3.2vw, 50px) / 0.95 'Nanum Pen Script', cursive;
+  /* Scale with the smaller viewport dimension so the label tracks the
+     portrait's contain-fit size (height-bound on wide screens like 1080p). */
+  font: 600 clamp(24px, min(3.2vw, 3.2vh), 50px) / 0.95 'Nanum Pen Script', cursive;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -144,9 +263,9 @@ a:hover {
   opacity: 1;
 }
 
-/* Bottom dock of icon links. No gap between links: each link carries its own
-   horizontal padding so the hover hit-areas are contiguous — hovering between
-   icons never falls back to the default portrait. */
+/* Frosted-glass dock of icon links. No gap between links: each link carries its
+   own horizontal padding so the hover hit-areas stay contiguous — hovering
+   between icons never falls back to the default portrait. */
 .dock {
   position: absolute;
   left: 50%;
@@ -155,6 +274,14 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 0;
+  padding: 6px clamp(8px, 1vw, 12px);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 10px 34px rgba(31, 38, 74, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(16px) saturate(165%);
+  -webkit-backdrop-filter: blur(16px) saturate(165%);
 }
 
 .dock-link {
@@ -163,13 +290,16 @@ a:hover {
   align-items: center;
   justify-content: center;
   height: 44px;
-  padding: 0 clamp(14px, 2vw, 21px);
+  padding: 0 clamp(12px, 1.6vw, 18px);
+  border-radius: 16px;
   color: #1c1a17;
-  transition: transform 0.15s ease, color 0.15s ease;
+  transition: transform 0.15s ease, color 0.15s ease,
+    background-color 0.15s ease;
 }
 
 .dock-link:hover {
   color: #1c1a17;
+  background: rgba(255, 255, 255, 0.4);
   transform: rotate(-2deg) scale(1.1);
 }
 
@@ -184,8 +314,111 @@ a:hover {
   width: 32px;
   height: 32px;
   border: 1.8px solid #1c1a17;
+  border-radius: 7px;
   font: 700 16px 'Space Mono', monospace;
   color: #1c1a17;
+}
+
+/* ---------- "Open to work" yellow stamp badge ----------
+   A multipoint star seal with a hexagonal-tessellation yellow base (like a book
+   stamp). Idle = plain yellow. On hover it grows, tilts in 3D toward the cursor,
+   and a radial holographic foil + glare bloom from the pointer (simeydotme's
+   holo-card feel). */
+.badge {
+  position: absolute;
+  left: clamp(20px, 3vw, 52px);
+  bottom: clamp(20px, 4vh, 52px);
+  width: clamp(172px, 16vw, 224px);
+  height: clamp(172px, 16vw, 224px);
+  transform: rotate(-6deg); /* the "6 degree" tilt, matching the rest of the desk */
+  transform-origin: center bottom;
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.3, 1);
+  perspective: 700px;
+  filter: drop-shadow(0 12px 22px rgba(60, 42, 0, 0.32));
+  cursor: pointer;
+  z-index: 3;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Grow on hover. */
+.badge:hover,
+.badge:focus-visible {
+  transform: rotate(-6deg) scale(1.12);
+  outline: none;
+}
+
+.badge-inner {
+  position: absolute;
+  inset: 0;
+  clip-path: var(--star);
+  isolation: isolate; /* contain the blend modes to the badge */
+  transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transform-style: preserve-3d;
+  transition: transform 0.2s ease;
+  /* Book-stamp base: a plain warm-yellow disc (tessellation + shine only
+     appear on hover, below). */
+  background: radial-gradient(circle at 50% 38%, #f3d066 0%, #e0a92a 55%, #c9911e 100%);
+}
+
+/* Faint, dense hexagonal tessellation — only visible when the badge is active. */
+.badge-inner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='49' viewBox='0 0 28 49'%3E%3Cg fill='%235a3d00' fill-opacity='0.14' fill-rule='evenodd'%3E%3Cpath d='M13.99 9.25l13 7.5v15l-13 7.5L1 31.75v-15l12.99-7.5zM3 17.9v12.7l10.99 6.34 11-6.35V17.9l-11-6.34L3 17.9zM0 15l12.98-7.5V0h-2v6.35L0 12.69v2.3zm0 18.5L12.98 41v8h-2v-6.85L0 35.81v-2.3zM15 0v7.5L27.99 15H28v-2.31h-.01L17 6.35V0h-2zm0 49v-8l12.99-7.5H28v2.31h-.01L17 42.15V49h-2z'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 20px 35px;
+  opacity: var(--on, 0);
+  transition: opacity 0.3s ease;
+}
+
+.badge-foil,
+.badge-glare {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Gold "shine" — one soft bright-gold highlight blooming from the cursor,
+   a monochrome variation of the base colour. Hover only (idle opacity 0). */
+.badge-foil {
+  background: radial-gradient(
+    circle at var(--px, 50%) var(--py, 50%),
+    #fff6d4 0%,
+    #f4cf68 32%,
+    rgba(180, 124, 28, 0) 70%
+  );
+  mix-blend-mode: overlay;
+  opacity: calc(var(--on, 0) * 0.85);
+  transition: opacity 0.3s ease;
+}
+
+/* Cursor glare: a soft white highlight under the pointer, hover only. */
+.badge-glare {
+  background: radial-gradient(
+    circle at var(--px, 50%) var(--py, 50%),
+    rgba(255, 255, 255, 0.9),
+    rgba(255, 255, 255, 0) 42%
+  );
+  mix-blend-mode: soft-light;
+  opacity: var(--on, 0);
+  transition: opacity 0.3s ease;
+}
+
+.badge-text {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 19%;
+  font: 700 italic clamp(9px, 0.95vw, 12px) / 1.28 'Space Mono', monospace;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #4a3300;
+  text-shadow: 0 1px 0 rgba(255, 240, 190, 0.5);
 }
 
 /* ---------- Blog page ---------- */
@@ -245,6 +478,9 @@ a:hover {
   .name {
     left: clamp(20px, 6vw, 40px);
   }
+  .summary {
+    display: none;
+  }
   .nav {
     left: auto;
     right: clamp(20px, 6vw, 40px);
@@ -261,6 +497,25 @@ a:hover {
   .home,
   .page {
     animation: none;
+  }
+  .portrait-intro,
+  .intro .nav,
+  .intro .dock,
+  .intro .contact-hint,
+  .intro .sum-ch,
+  .intro .magic-stars {
+    animation: none !important;
+    opacity: 1;
+  }
+  .star {
+    animation: none !important;
+    opacity: 0.85;
+  }
+  .badge,
+  .badge-foil,
+  .badge-glare,
+  .badge-inner {
+    transition: none !important;
   }
   .holo-float,
   .holo-foil,
