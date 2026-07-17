@@ -95,17 +95,28 @@ const SUMMARY = [
 /** Words in SUMMARY rendered bold (matched ignoring case/punctuation). */
 const EMPHASIS = new Set(['software', 'users', 'design']);
 
+type MagicStar = {
+  top?: string;
+  right?: string;
+  bottom?: string;
+  left?: string;
+  size: string;
+  dur: string;
+  delay: string;
+  rot: string;
+};
+
 /** Hand-drawn sparkles scattered around "product magic". Positions are in `em`
  *  so they track the bio's font size; each twinkles slowly and out of sync.
  *  Kept to the left of and below the phrase — the −6° tilt rotates the right
  *  and top edges up into the line above, so those zones aren't safe. */
-const MAGIC_STARS = [
+const MAGIC_STARS: MagicStar[] = [
   { top: '0.3em', left: '-0.95em', size: '0.52em', dur: '1.0s', delay: '0s', rot: '-8deg' },
   { bottom: '-0.7em', left: '4%', size: '0.4em', dur: '0.85s', delay: '0.4s', rot: '12deg' },
   { bottom: '-0.9em', left: '40%', size: '0.34em', dur: '1.05s', delay: '0.55s', rot: '-14deg' },
   { bottom: '-0.7em', right: '10%', size: '0.44em', dur: '0.9s', delay: '0.28s', rot: '7deg' },
   { bottom: '-0.2em', right: '-0.8em', size: '0.48em', dur: '0.95s', delay: '0.15s', rot: '5deg' },
-] as const;
+];
 
 /** Availability badge copy + LinkedIn destination. */
 const BADGE_TEXT = 'Now looking to join a talented team!';
@@ -126,8 +137,6 @@ const BADGE_STAR_CLIP = (() => {
 })();
 
 /* Intro choreography (ms / s): portrait fades, then dock + nav, then the bio writes itself. */
-const INTRO_PORTRAIT_S = 1.0; // portrait fade duration
-const INTRO_UI_DELAY_S = 1.0; // dock + nav start
 const INTRO_WRITE_DELAY_S = 1.7; // bio writing starts
 const INTRO_CHAR_S = 0.022; // per-character writing pace
 
