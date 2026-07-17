@@ -65,6 +65,26 @@ a:hover {
   overflow: hidden;
 }
 
+/* Full-screen paper + portrait shader layers (moved off inline styles so the
+   stacked mobile layout can restack them). */
+.paper-bg,
+.portrait {
+  position: absolute;
+  inset: 0;
+}
+
+/* Layout stages are transparent wrappers on wide screens — their children keep
+   their absolute "desk" positions. The stacked layout turns them into two
+   crossfading slides. */
+.stage {
+  display: contents;
+}
+
+/* Swipe/wheel hint belongs to the stacked slide deck only. */
+.slide-hint {
+  display: none;
+}
+
 /* ---------- Home ---------- */
 
 .home {
@@ -77,6 +97,8 @@ a:hover {
   position: absolute;
   left: clamp(16px, 2vw, 32px);
   top: clamp(40px, 6vh, 80px);
+  transform: rotate(-6deg); /* the "6 degree" desk tilt */
+  transform-origin: left top;
   filter: url(#inkgrain);
 }
 
@@ -95,13 +117,14 @@ a:hover {
   position: absolute;
   /* Horizontally centred in the column between the screen's left edge and
      the portrait's left edge (photo left = 50% - min(36vw, 24.135vh),
-     from the contain-fit geometry; we sit at half of that). Nudged left a
-     little to offset the right-heavy look of the ragged paragraphs. */
-  left: calc(25% - min(18vw, 12.07vh) - 3vw);
-  max-width: 30ch; /* keeps the paragraph a narrow hand-written block */
-  top: clamp(160px, 21vh, 240px);
-  transform: translateX(-50%) rotate(-6deg);
-  transform-origin: center top;
+     from the contain-fit geometry; the column centre is half of that). */
+  left: calc(25% - min(18vw, 12.07vh));
+  /* A narrow hand-written block, but never wider than its column (screen edge
+     → portrait edge, minus a little air) so it can't overflow on tight ratios. */
+  max-width: min(30ch, calc(50vw - min(36vw, 24.135vh) - 20px));
+  top: 50%;
+  transform: translate(-50%, -50%) rotate(-6deg);
+  transform-origin: center;
   font: 400 clamp(20px, min(2.4vw, 2.8vh), 32px) / 1.5 'Nanum Pen Script', cursive;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -176,9 +199,15 @@ a:hover {
 
 .intro .nav,
 .intro .dock,
-.intro .contact-hint,
-.intro .badge {
+.intro .contact-hint {
   animation: homein 0.6s ease 1s both;
+}
+
+/* The badge lands last — it fades in only after the bio (and its sparkles)
+   have finished writing. --badge-delay is set inline from App.tsx. */
+.intro .badge {
+  opacity: 0;
+  animation: homein 0.6s ease var(--badge-delay, 5s) both;
 }
 
 @keyframes inkwrite {
@@ -205,12 +234,17 @@ a:hover {
   animation: homein 0.6s ease var(--stars-delay, 4.3s) both;
 }
 
-/* Nav list, sitting to the right of centre */
+/* Nav list, centred in the column between the portrait's right edge and the
+   screen's right edge (mirror of the summary column: centre = 75% + half of
+   the photo's half-width). */
 .nav {
   position: absolute;
-  left: calc(50% + 24.2vh + 4vw);
+  left: calc(75% + min(18vw, 12.07vh));
   top: 50%;
-  transform: translateY(-50%);
+  transform: translate(-50%, -50%);
+  /* Size to the widest item (not the narrow strip left of the screen edge) so
+     the labels never wrap; translateX(-50%) then centres that block. */
+  width: max-content;
   display: flex;
   flex-direction: column;
   gap: clamp(12px, 2.4vh, 22px);
@@ -326,12 +360,15 @@ a:hover {
    holo-card feel). */
 .badge {
   position: absolute;
-  left: clamp(20px, 3vw, 52px);
-  bottom: clamp(20px, 4vh, 52px);
+  /* Anchored to the bottom-right. The corner is deliberately clipped off-screen,
+     driven mainly by the bottom overhang; the horizontal overhang is kept small
+     so the full badge text still clears the right viewport edge. */
+  right: clamp(-26px, -1.4vw, -16px);
+  bottom: clamp(-64px, -4.5vh, -44px);
   width: clamp(172px, 16vw, 224px);
   height: clamp(172px, 16vw, 224px);
   transform: rotate(-6deg); /* the "6 degree" tilt, matching the rest of the desk */
-  transform-origin: center bottom;
+  transform-origin: center;
   transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.3, 1);
   perspective: 700px;
   filter: drop-shadow(0 12px 22px rgba(60, 42, 0, 0.32));
@@ -413,8 +450,8 @@ a:hover {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 0 19%;
-  font: 700 italic clamp(9px, 0.95vw, 12px) / 1.28 'Space Mono', monospace;
+  padding: 0 17%;
+  font: 700 italic clamp(11px, 1.2vw, 15px) / 1.3 'Space Mono', monospace;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: #4a3300;
@@ -472,24 +509,209 @@ a:hover {
   color: #1c1a17;
 }
 
-/* ---------- Narrow screens ---------- */
+/* ---------- Stacked layout: portrait / narrow / mobile ----------
+   The three-column desk needs a landscape aspect ratio. Once the window is
+   portrait-ish (≤ 1:1) or narrow (≤ 900px) it becomes a no-scroll deck of two
+   crossfading slides — slide 0: name · portrait · summary; slide 1: the nav
+   menu — flipped by wheel / swipe. The contact dock is a fixed left rail; the
+   "open to work" badge is dropped. Slide state lives on .screen (.slide-0/1). */
 
-@media (max-width: 720px) {
-  .name {
-    left: clamp(20px, 6vw, 40px);
+@media (max-width: 900px), (max-aspect-ratio: 1/1) {
+  html,
+  body,
+  #root {
+    height: 100%;
   }
+
+  body {
+    overflow: hidden;
+  }
+
+  .screen {
+    height: 100vh;
+    overflow: hidden;
+    touch-action: none; /* we drive slide switches ourselves */
+  }
+
+  /* Paper stays fixed behind the deck; z-index keeps the shader canvas beneath
+     the slides (it's a stacking-context layer that would otherwise cover them). */
+  .paper-bg {
+    position: fixed;
+    z-index: -1;
+  }
+
+  /* .home is just a passthrough here — the slides position themselves. */
+  .home {
+    display: contents;
+  }
+
+  /* Each slide is a full-viewport layer; only one is opaque at a time. Left
+     padding clears the fixed dock rail. */
+  .stage-profile,
+  .stage-menu {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(16px, 4vh, 34px) clamp(14px, 5vw, 26px) clamp(16px, 4vh, 34px)
+      clamp(48px, 13vw, 68px);
+    transition: opacity 0.55s ease;
+    will-change: opacity;
+  }
+
+  /* Profile slide holds no interactive controls. */
+  .stage-profile {
+    gap: clamp(6px, 2.4vw, 16px); /* tightened: name ↔ portrait ↔ summary */
+    pointer-events: none;
+  }
+
+  /* Crossfade driven by the slide class on .screen. */
+  .screen.slide-0 .stage-profile {
+    opacity: 1;
+  }
+  .screen.slide-0 .stage-menu {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .screen.slide-1 .stage-profile {
+    opacity: 0;
+  }
+  .screen.slide-1 .stage-menu {
+    opacity: 1;
+  }
+
+  /* Name: pinned to the top-left corner (out of the centred flow). */
+  .name {
+    position: absolute;
+    top: clamp(12px, 2.4vh, 24px);
+    left: clamp(12px, 3.5vw, 20px);
+    margin: 0;
+    transform: rotate(-5deg);
+    transform-origin: left top;
+    z-index: 3;
+  }
+
+  /* Portrait hero: the shader floats the photo inside this box. */
+  /* Big Instagram-style hero: aspect matched to the photo (no letterbox), sized
+     to fill the leftover height (after name + summary) but capped so it never
+     forces a scroll. */
+  .portrait-hero {
+    flex: none;
+    aspect-ratio: 1027 / 1532;
+    height: clamp(220px, calc(100dvh - 27rem), 460px);
+    width: auto;
+    max-width: 86vw;
+  }
+
   .summary {
+    position: static;
+    display: block;
+    top: auto;
+    left: auto;
+    max-width: 32ch;
+    margin: 0;
+    transform: rotate(-3deg);
+    text-align: center;
+  }
+
+  .nav {
+    position: static;
+    top: auto;
+    left: auto;
+    transform: none;
+    width: max-content;
+    margin: 0 auto;
+    align-items: center;
+    gap: clamp(16px, 3.2vh, 24px);
+  }
+
+  /* Contact dock: a vertical rail pinned to the left, centred vertically. */
+  .dock {
+    position: fixed;
+    left: clamp(10px, 3vw, 18px);
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+    flex-direction: column;
+    gap: 2px;
+    padding: clamp(8px, 2vw, 12px) 6px;
+  }
+
+  .dock-link {
+    height: 40px;
+    padding: clamp(8px, 2vw, 12px) 6px;
+  }
+
+  /* Badge is dropped in this view. */
+  .badge {
     display: none;
   }
-  .nav {
-    left: auto;
-    right: clamp(20px, 6vw, 40px);
-    top: auto;
-    bottom: 96px;
-    transform: none;
+
+  /* Blue hint becomes a flow item just below the summary (so it never collides
+     with the big portrait); text is driven by the last-tapped dock icon. */
+  .contact-hint {
+    position: static;
+    right: auto;
+    bottom: auto;
+    align-self: center;
+    margin-top: clamp(2px, 1.4vw, 10px);
+    font-size: clamp(26px, 8vw, 40px);
+    transform: rotate(-4deg);
   }
+
+  /* Swipe / wheel hint, bottom-centred on the profile slide, top on the menu. */
+  .slide-hint {
+    display: flex;
+    position: fixed;
+    left: 50%;
+    bottom: clamp(14px, 4vh, 28px);
+    transform: translateX(-50%);
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    color: #6f8296;
+    pointer-events: none;
+    opacity: 0.85;
+    z-index: 4;
+  }
+
+  .slide-hint-label {
+    font: 400 11px 'Space Mono', monospace;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .slide-hint-chev {
+    display: block;
+    transition: transform 0.3s ease; /* rotation lives here … */
+  }
+  .slide-hint-chev svg {
+    display: block;
+    animation: hintbob 1.7s ease-in-out infinite; /* … bob lives here (no clash) */
+  }
+
+  .screen.slide-1 .slide-hint {
+    bottom: auto;
+    top: clamp(14px, 4vh, 28px);
+  }
+  .screen.slide-1 .slide-hint-chev {
+    transform: rotate(180deg);
+  }
+
   .page {
     padding: 48px 28px;
+  }
+}
+
+@keyframes hintbob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
   }
 }
 
@@ -507,9 +729,14 @@ a:hover {
     animation: none !important;
     opacity: 1;
   }
-  .star {
+  .star,
+  .slide-hint-chev svg {
     animation: none !important;
     opacity: 0.85;
+  }
+  .stage-profile,
+  .stage-menu {
+    transition: none !important;
   }
   .badge,
   .badge-foil,

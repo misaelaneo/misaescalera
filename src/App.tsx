@@ -6,6 +6,8 @@ import {
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
+  type TouchEvent as ReactTouchEvent,
 } from 'react';
 import { PaperTexture } from '@paper-design/shaders-react';
 import { MailIcon, PhoneIcon, ResumeIcon, DownloadIcon } from './components/icons';
@@ -28,7 +30,10 @@ const PAPER = {
 } as const;
 
 const PAPER_COLOR = '#9fadbc';
-const NAME_SLANT = -6; // degrees
+
+/** Viewport query for the stacked (portrait / narrow / mobile) layout. Must
+ *  stay in sync with the matching @media rule in globals.css. */
+const STACK_MQ = '(max-width: 900px), (max-aspect-ratio: 1/1)';
 
 type PageKey = 'experience' | 'strategy' | 'execution' | 'ai' | 'marketing';
 
@@ -125,7 +130,7 @@ const LINKEDIN_URL = 'https://www.linkedin.com/in/misaelescalera/';
 /** Multipoint "seal" star used to clip the holographic availability badge.
  *  A ring of shallow points (outer 50% / inner 43% of the box) → a circle
  *  edged with little spikes. Built once as a CSS polygon() string. */
-const BADGE_STAR_POINTS = 22;
+const BADGE_STAR_POINTS = 14;
 const BADGE_STAR_CLIP = (() => {
   const pts: string[] = [];
   for (let i = 0; i < BADGE_STAR_POINTS * 2; i += 1) {
@@ -200,11 +205,55 @@ function SumWord({ data, space }: { data: SumWordData; space: boolean }) {
 export default function App() {
   const [page, setPage] = useState<PageKey | null>(null);
   const [hover, setHover] = useState<HoverKey | null>(null);
+  // Touch devices have no hover, so a tap on a dock icon drives the blue hint
+  // label instead. Kept separate from `hover` so it doesn't swap the hero pose.
+  const [tapped, setTapped] = useState<HoverKey | null>(null);
 
   // First-load intro: portrait → dock/nav → hand-written bio → sparkles. Once
   // it has played, the flag flips so returning from a page renders everything
   // static. (The timer is armed below, once `starsDelay` is known.)
   const [introPlayed, setIntroPlayed] = useState(false);
+
+  // ── Mobile "slide deck" ───────────────────────────────────────────────
+  // Below the stacked breakpoint the home doesn't scroll; it's two
+  // crossfading slides (0 = profile, 1 = nav menu) driven by wheel / swipe.
+  const [isStacked, setIsStacked] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(STACK_MQ).matches,
+  );
+  const [slide, setSlide] = useState(0);
+
+  useEffect(() => {
+    const mq = window.matchMedia(STACK_MQ);
+    const on = () => setIsStacked(mq.matches);
+    on();
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+
+  // Always land on the profile slide when entering the stacked view or coming
+  // back from a blog page.
+  useEffect(() => {
+    if (!isStacked || page) setSlide(0);
+  }, [isStacked, page]);
+
+  // Wheel / swipe flip the slide (a short lock debounces trackpad momentum).
+  const wheelLock = useRef(false);
+  const onScreenWheel = (e: ReactWheelEvent<HTMLDivElement>) => {
+    if (!isStacked || page || Math.abs(e.deltaY) < 16 || wheelLock.current) return;
+    wheelLock.current = true;
+    window.setTimeout(() => (wheelLock.current = false), 700);
+    setSlide(e.deltaY > 0 ? 1 : 0);
+  };
+  const touchY = useRef(0);
+  const onScreenTouchStart = (e: ReactTouchEvent<HTMLDivElement>) => {
+    touchY.current = e.touches[0].clientY;
+  };
+  const onScreenTouchEnd = (e: ReactTouchEvent<HTMLDivElement>) => {
+    if (!isStacked || page) return;
+    const dy = e.changedTouches[0].clientY - touchY.current;
+    if (Math.abs(dy) < 40) return;
+    setSlide(dy < 0 ? 1 : 0); // swipe up → menu, swipe down → profile
+  };
 
   const enter = (key: HoverKey) => {
     setHover(key);
@@ -313,21 +362,33 @@ export default function App() {
     return lastWord.delays[lastWord.delays.length - 1] + 0.4;
   }, [summaryParas]);
 
-  // Hold the intro state until the last thing (the sparkles' 0.6s fade) has
+  // The badge is the final beat of the intro: it fades in only once the bio and
+  // its sparkles have finished (sparkles fade over 0.6s from `starsDelay`).
+  const badgeDelay = starsDelay + 0.6 + 0.3;
+
+  // Hold the intro state until the last thing (the badge's 0.6s fade) has
   // finished, so `.intro` gating outlives every intro animation.
   useEffect(() => {
-    const total = (starsDelay + 0.6 + 0.1) * 1000;
+    const total = (badgeDelay + 0.6 + 0.1) * 1000;
     const t = setTimeout(() => setIntroPlayed(true), total);
     return () => clearTimeout(t);
-  }, [starsDelay]);
+  }, [badgeDelay]);
 
   const p = page ? PAGES[page] : null;
-  const photoSrc = hover ? PHOTOS[hover] : '/assets/misa.png';
+  // The hero pose only swaps on desktop hover; on mobile it stays the default.
+  const photoSrc = !isStacked && hover ? PHOTOS[hover] : '/assets/misa.png';
+  // The blue hint reads hover on desktop, the last-tapped icon on mobile.
+  const hintKey = isStacked ? tapped : hover;
 
   return (
-    <div className="screen">
+    <div
+      className={`screen slide-${slide}`}
+      onWheel={onScreenWheel}
+      onTouchStart={onScreenTouchStart}
+      onTouchEnd={onScreenTouchEnd}
+    >
       {/* Procedural paper background */}
-      <div style={{ position: 'absolute', inset: 0 }}>
+      <div className="paper-bg">
         <PaperTexture
           {...PAPER}
           colorBack="#ffffff"
@@ -335,79 +396,96 @@ export default function App() {
           style={{ width: '100%', height: '100%' }}
         />
       </div>
-      {/* Portrait rendered through the same paper texture; swaps on hover, fades out on a page */}
-      <div
-        className={introPlayed ? undefined : 'portrait-intro'}
-        style={{
-          position: 'absolute',
-          inset: 0,
-          opacity: page ? 0 : 1,
-          transition: 'opacity .55s ease',
-          pointerEvents: 'none',
-        }}
-      >
-        <PaperTexture
-          {...PAPER}
-          image={photoSrc}
-          colorBack="#ffffff"
-          colorFront={PAPER_COLOR}
-          style={{ width: '100%', height: '100%' }}
-        />
-      </div>
+      {/* Full-screen portrait (wide layout only); swaps on hover, fades on a page.
+          In the stacked layout the portrait moves into the profile slide below. */}
+      {!isStacked && (
+        <div
+          className={`portrait${introPlayed ? '' : ' portrait-intro'}`}
+          style={{
+            opacity: page ? 0 : 1,
+            transition: 'opacity .55s ease',
+            pointerEvents: 'none',
+          }}
+        >
+          <PaperTexture
+            {...PAPER}
+            image={photoSrc}
+            colorBack="#ffffff"
+            colorFront={PAPER_COLOR}
+            style={{ width: '100%', height: '100%' }}
+          />
+        </div>
+      )}
+
+      {/* Grainy-ink displacement filter applied to the name + summary */}
+      <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden>
+        <filter id="inkgrain" x="-20%" y="-20%" width="140%" height="140%">
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency="0.35"
+            numOctaves="2"
+            seed="7"
+            result="noise"
+          />
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="1" result="disp" />
+          <feColorMatrix
+            in="noise"
+            type="matrix"
+            values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0.5 0.5 0.5 0 -0.35"
+            result="alphaNoise"
+          />
+          <feComposite in="disp" in2="alphaNoise" operator="out" />
+        </filter>
+      </svg>
 
       {!page && (
         <div className={`home${introPlayed ? '' : ' intro'}`}>
-          {/* Grainy-ink displacement filter applied to the name */}
-          <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden>
-            <filter id="inkgrain" x="-20%" y="-20%" width="140%" height="140%">
-              <feTurbulence
-                type="fractalNoise"
-                baseFrequency="0.35"
-                numOctaves="2"
-                seed="7"
-                result="noise"
-              />
-              <feDisplacementMap in="SourceGraphic" in2="noise" scale="1" result="disp" />
-              <feColorMatrix
-                in="noise"
-                type="matrix"
-                values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0.5 0.5 0.5 0 -0.35"
-                result="alphaNoise"
-              />
-              <feComposite in="disp" in2="alphaNoise" operator="out" />
-            </filter>
-          </svg>
-
-          <div
-            className="name"
-            style={{
-              transform: `rotate(${NAME_SLANT}deg)`,
-              transformOrigin: 'left top',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-              <div style={{ display: 'flex' }}>
-                {nameRow1.map((ch, i) => (
-                  <span key={i} style={ch.style}>
-                    {ch.c}
-                  </span>
-                ))}
-              </div>
-              <div style={{ margin: '0 0 8px 4px' }}>
+          {/* ── Slide 1: name · portrait · summary ─────────────────────────
+              On wide screens .stage is display:contents, so these keep their
+              absolute desk positions; in the stacked layout the stage becomes a
+              crossfading full-viewport slide. */}
+          <div className="stage stage-profile">
+            <div className="name">
+              <div style={{ display: 'flex', alignItems: 'flex-end' }}>
                 <div style={{ display: 'flex' }}>
-                  {nameRow2.map((ch, i) => (
+                  {nameRow1.map((ch, i) => (
                     <span key={i} style={ch.style}>
                       {ch.c}
                     </span>
                   ))}
                 </div>
-                <div className="tagline">product leader</div>
+                <div style={{ margin: '0 0 8px 4px' }}>
+                  <div style={{ display: 'flex' }}>
+                    {nameRow2.map((ch, i) => (
+                      <span key={i} style={ch.style}>
+                        {ch.c}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="tagline">product leader</div>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Hand-written summary below the name. */}
-          <div className="summary">
+            {/* Portrait as a hero inside the stacked profile slide. The box is
+                sized to the photo's aspect below, and scale is bumped from the
+                shared 0.72 so the photo fills the frame (Instagram-style) rather
+                than floating small inside it. */}
+            {isStacked && (
+              <div className={`portrait-hero${introPlayed ? '' : ' portrait-intro'}`}>
+                <PaperTexture
+                  {...PAPER}
+                  scale={0.98}
+                  image={photoSrc}
+                  colorBack="#ffffff"
+                  colorFront={PAPER_COLOR}
+                  style={{ width: '100%', height: '100%' }}
+                />
+              </div>
+            )}
+
+            {/* Hand-written summary. */}
+            <div className="summary">
             {summaryParas.map((words, pi) => {
               const magicStart = words.findIndex((w) => w.magic);
               const lead = magicStart === -1 ? words : words.slice(0, magicStart);
@@ -460,24 +538,41 @@ export default function App() {
                 </p>
               );
             })}
+            </div>
+
+            {/* Blue greeting / contact label. Absolutely positioned near the
+                portrait on wide screens (JS), a flow item under the summary in
+                the stacked slide. Its text follows hover (desktop) or the
+                last-tapped dock icon (mobile). */}
+            <div
+              ref={hintRef}
+              className="contact-hint is-on"
+              style={isStacked ? undefined : { right: hintPos.right, bottom: hintPos.bottom }}
+              aria-hidden
+            >
+              {hintKey ? HOLO_LABELS[hintKey] : 'HI :)'}
+            </div>
           </div>
 
-          <nav className="nav">
-            {PAGE_ORDER.map((key) => (
-              <a
-                key={key}
-                href={`#${key}`}
-                className="nav-item"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setPage(key);
-                }}
-              >
-                <span className="nav-bullet">&#8226;</span>
-                {PAGES[key].label}
-              </a>
-            ))}
-          </nav>
+          {/* ── Slide 2: the navigation menu ─────────────────────────────── */}
+          <div className="stage stage-menu">
+            <nav className="nav">
+              {PAGE_ORDER.map((key) => (
+                <a
+                  key={key}
+                  href={`#${key}`}
+                  className="nav-item"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setPage(key);
+                  }}
+                >
+                  <span className="nav-bullet">&#8226;</span>
+                  {PAGES[key].label}
+                </a>
+              ))}
+            </nav>
+          </div>
 
           <div className="dock" ref={dockRef}>
             <a
@@ -499,6 +594,7 @@ export default function App() {
               title="LinkedIn"
               target="_blank"
               rel="noreferrer"
+              onClick={() => setTapped('linkedin')}
               onMouseEnter={() => enter('linkedin')}
               onMouseLeave={leave}
             >
@@ -508,6 +604,7 @@ export default function App() {
               href="tel:+13526424703"
               className="dock-link"
               title="(352) 642-4703"
+              onClick={() => setTapped('phone')}
               onMouseEnter={() => enter('phone')}
               onMouseLeave={leave}
             >
@@ -517,6 +614,7 @@ export default function App() {
               href="mailto:misaelaneo@gmail.com"
               className="dock-link"
               title="misaelaneo@gmail.com"
+              onClick={() => setTapped('email')}
               onMouseEnter={() => enter('email')}
               onMouseLeave={leave}
             >
@@ -524,20 +622,16 @@ export default function App() {
             </a>
           </div>
 
-          <div
-            ref={hintRef}
-            className={`contact-hint${hover || true ? ' is-on' : ''}`}
-            style={{ right: hintPos.right, bottom: hintPos.bottom }}
-            aria-hidden
-          >
-            {hover ? HOLO_LABELS[hover] : 'HI :)'}
-          </div>
-
           {/* Holographic "open to work" badge → LinkedIn (new tab). */}
           <a
             ref={badgeRef}
             className="badge"
-            style={{ ['--star' as string]: BADGE_STAR_CLIP } as CSSProperties}
+            style={
+              {
+                ['--star' as string]: BADGE_STAR_CLIP,
+                ['--badge-delay' as string]: `${badgeDelay.toFixed(2)}s`,
+              } as CSSProperties
+            }
             href={LINKEDIN_URL}
             target="_blank"
             rel="noreferrer"
@@ -551,6 +645,23 @@ export default function App() {
               <span className="badge-text">{BADGE_TEXT}</span>
             </span>
           </a>
+
+          {/* Swipe / wheel hint for the two-slide stacked view (mobile only). */}
+          <div className="slide-hint" aria-hidden>
+            <span className="slide-hint-chev">
+              <svg viewBox="0 0 24 24" width="22" height="22">
+                <path
+                  d="M6 15l6-6 6 6"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            <span className="slide-hint-label">{slide === 0 ? 'menu' : 'profile'}</span>
+          </div>
         </div>
       )}
 
