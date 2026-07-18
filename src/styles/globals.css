@@ -75,8 +75,10 @@ a:hover {
 
 /* Layout stages are transparent wrappers on wide screens — their children keep
    their absolute "desk" positions. The stacked layout turns them into two
-   crossfading slides. */
-.stage {
+   crossfading slides. .hero-wrap is likewise a passthrough on desktop and a
+   relative frame (for pinning the greeting) in the stacked slide. */
+.stage,
+.hero-wrap {
   display: contents;
 }
 
@@ -582,10 +584,11 @@ a:hover {
     opacity: 1;
   }
 
-  /* Name: pinned to the top-left corner (out of the centred flow). */
+  /* Name: pinned near the top-left corner (out of the centred flow), with a
+     little breathing room from the top edge. */
   .name {
     position: absolute;
-    top: clamp(12px, 2.4vh, 24px);
+    top: clamp(28px, 5.5vh, 52px);
     left: clamp(12px, 3.5vw, 20px);
     margin: 0;
     transform: rotate(-5deg);
@@ -596,13 +599,22 @@ a:hover {
   /* Portrait hero: the shader floats the photo inside this box. */
   /* Big Instagram-style hero: aspect matched to the photo (no letterbox), sized
      to fill the leftover height (after name + summary) but capped so it never
-     forces a scroll. */
-  .portrait-hero {
+     forces a scroll. The frame carries the size + a bottom margin that reserves
+     a strip of paper for the greeting; the shader just fills it. */
+  .hero-wrap {
+    display: block;
+    position: relative;
     flex: none;
     aspect-ratio: 1027 / 1532;
-    height: clamp(220px, calc(100dvh - 27rem), 460px);
+    height: clamp(220px, calc(100dvh - 26rem), 470px);
     width: auto;
-    max-width: 86vw;
+    max-width: 88vw;
+    margin-top: clamp(24px, 5vh, 40px); /* paper strip above for the greeting */
+  }
+
+  .portrait-hero {
+    width: 100%;
+    height: 100%;
   }
 
   .summary {
@@ -649,16 +661,18 @@ a:hover {
     display: none;
   }
 
-  /* Blue hint becomes a flow item just below the summary (so it never collides
-     with the big portrait); text is driven by the last-tapped dock icon. */
-  .contact-hint {
-    position: static;
-    right: auto;
+  /* Blue hint pinned to the photo's top-right, sitting in the reserved paper
+     strip just above it; text follows the last-tapped dock icon. */
+  .hero-wrap .contact-hint {
+    position: absolute;
+    left: auto;
     bottom: auto;
-    align-self: center;
-    margin-top: clamp(2px, 1.4vw, 10px);
-    font-size: clamp(26px, 8vw, 40px);
-    transform: rotate(-4deg);
+    right: clamp(2px, 2vw, 14px);
+    top: clamp(-44px, -5.5vh, -30px);
+    margin: 0;
+    font-size: clamp(24px, 7.5vw, 36px);
+    transform: rotate(-5deg);
+    transform-origin: right bottom;
   }
 
   /* Swipe / wheel hint, bottom-centred on the profile slide, top on the menu. */

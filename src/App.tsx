@@ -165,7 +165,7 @@ function ink(word: string, size: number, seed: number, offsetChars: string | nul
         fontFamily: "'Spectral SC','Space Mono',monospace",
         fontWeight: 500,
         lineHeight: 1,
-        fontSize: `min(${Math.round(px)}px, ${(px / 14).toFixed(2)}vw)`,
+        fontSize: `clamp(${Math.round(px * 0.52)}px, ${(px / 14).toFixed(2)}vw, ${Math.round(px)}px)`,
         color: '#161311',
         transform: offset ? `translateY(${((r1 - 0.5) * size * 0.22).toFixed(1)}px)` : 'none',
         textShadow: '0 0 1px rgba(28,26,23,.35)',
@@ -467,22 +467,38 @@ export default function App() {
               </div>
             </div>
 
-            {/* Portrait as a hero inside the stacked profile slide. The box is
-                sized to the photo's aspect below, and scale is bumped from the
-                shared 0.72 so the photo fills the frame (Instagram-style) rather
-                than floating small inside it. */}
-            {isStacked && (
-              <div className={`portrait-hero${introPlayed ? '' : ' portrait-intro'}`}>
-                <PaperTexture
-                  {...PAPER}
-                  scale={0.98}
-                  image={photoSrc}
-                  colorBack="#ffffff"
-                  colorFront={PAPER_COLOR}
-                  style={{ width: '100%', height: '100%' }}
-                />
+            {/* Portrait hero + its bottom-right greeting. .hero-wrap is a
+                display:contents passthrough on wide screens (the hint keeps its
+                JS desk position); in the stacked slide it's a relative frame
+                sized to the photo, so the hint pins to the photo's corner. */}
+            <div className="hero-wrap">
+              {/* Sized to the photo's aspect (below); scale bumped from the
+                  shared 0.72 so the photo fills the frame (Instagram-style). */}
+              {isStacked && (
+                <div className={`portrait-hero${introPlayed ? '' : ' portrait-intro'}`}>
+                  <PaperTexture
+                    {...PAPER}
+                    scale={0.98}
+                    image={photoSrc}
+                    colorBack="#ffffff"
+                    colorFront={PAPER_COLOR}
+                    style={{ width: '100%', height: '100%' }}
+                  />
+                </div>
+              )}
+
+              {/* Blue greeting / contact label. Pinned to the photo's
+                  bottom-right (mobile) or JS-positioned near the portrait
+                  (desktop). Text follows hover (desktop) or last-tapped icon. */}
+              <div
+                ref={hintRef}
+                className="contact-hint is-on"
+                style={isStacked ? undefined : { right: hintPos.right, bottom: hintPos.bottom }}
+                aria-hidden
+              >
+                {hintKey ? HOLO_LABELS[hintKey] : 'HI :)'}
               </div>
-            )}
+            </div>
 
             {/* Hand-written summary. */}
             <div className="summary">
@@ -538,19 +554,6 @@ export default function App() {
                 </p>
               );
             })}
-            </div>
-
-            {/* Blue greeting / contact label. Absolutely positioned near the
-                portrait on wide screens (JS), a flow item under the summary in
-                the stacked slide. Its text follows hover (desktop) or the
-                last-tapped dock icon (mobile). */}
-            <div
-              ref={hintRef}
-              className="contact-hint is-on"
-              style={isStacked ? undefined : { right: hintPos.right, bottom: hintPos.bottom }}
-              aria-hidden
-            >
-              {hintKey ? HOLO_LABELS[hintKey] : 'HI :)'}
             </div>
           </div>
 
