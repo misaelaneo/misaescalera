@@ -31,41 +31,90 @@ const PAPER = {
 
 const PAPER_COLOR = '#9fadbc';
 
+/** Colors for the photo-bearing shaders, which sit *on top of* .paper-bg.
+ *  Zero alpha on both makes the shader paint only the photo and leave the
+ *  surround transparent: the fragment shader ends with
+ *    opacity = fgOpacity*res + bgOpacity*(1-opacity), then mix(opacity, 1, frame)
+ *  so alpha 0 collapses to 0 outside the image and 1 inside it. Opaque colors
+ *  here (the component's defaults) would make each portrait a second
+ *  full-viewport paper sheet, which shows as a hard seam once .portrait-docked
+ *  slides it left. The photo itself still gets the full crumple/fold treatment.
+ *  8-digit hex on purpose — the shader's parser rejects the CSS keyword
+ *  `transparent` and falls back to an opaque color. */
+const PAPER_OVER_BG = {
+  colorBack: '#00000000',
+  colorFront: '#00000000',
+} as const;
+
+/** How much the paper shader darkens its source image, negated — see the
+ *  #portrait-lift filter below for the derivation. Kept as an expression so it
+ *  follows PAPER.contrast instead of drifting out of sync with it. */
+const PAPER_IMAGE_LIFT =
+  -0.6 * Math.pow(PAPER.contrast, 0.4) * (1 / Math.sqrt(6) - 0.7);
+
 /** Viewport query for the stacked (portrait / narrow / mobile) layout. Must
  *  stay in sync with the matching @media rule in globals.css. */
-const STACK_MQ = '(max-width: 900px), (max-aspect-ratio: 1/1)';
+const STACK_MQ = '(max-width: 1100px), (max-aspect-ratio: 1/1)';
 
-type PageKey = 'experience' | 'strategy' | 'execution' | 'ai' | 'marketing';
+type PageKey =
+  | 'experience'
+  | 'strategy'
+  | 'execution'
+  | 'ai'
+  | 'marketing'
+  | 'resources';
 
-const PAGES: Record<PageKey, { label: string; title: string; body: string }> = {
+const PAGES: Record<
+  PageKey,
+  { label: string; title: string; body: string; portrait?: string }
+> = {
   experience: {
-    label: 'Experience',
-    title: 'Experience',
+    label: 'About me',
+    title: 'About me',
     body: 'The long version of the story — roles, teams, and the products that shipped along the way. This page is still in the typewriter; the résumé below is the best map for now.',
+    // When this page is open, the sliding profile portrait swaps to this photo.
+    portrait: '/assets/About_me.png',
   },
   strategy: {
     label: 'Strategy',
     title: 'Strategy',
     body: 'Notes on picking the right problems: positioning, sequencing, and the discipline of the not-now list. First essay coming soon.',
+    portrait: '/assets/Strategy.png',
   },
   execution: {
     label: 'Execution',
     title: 'Execution',
     body: 'How the work actually gets done — rituals, roadmaps, and keeping teams honest without keeping them slow. First essay coming soon.',
+    portrait: '/assets/Execution.png',
   },
   ai: {
     label: 'Thoughts on AI',
     title: 'Thoughts on AI',
     body: 'Working notes on building with (and around) AI — what changes, what doesn’t, and what product leaders should do about it. First essay coming soon.',
+    portrait: '/assets/thoughts_on_AI.png',
   },
   marketing: {
     label: 'Marketing & Branding',
     title: 'Marketing & Branding',
     body: 'Where product meets story — naming, launches, and making things people remember. First essay coming soon.',
+    portrait: '/assets/marketing_and_branding.png',
+  },
+  resources: {
+    label: 'Resources',
+    title: 'Resources',
+    body: 'The books, tools, and essays worth passing along — a running shelf of what has actually changed how I work. Still being catalogued.',
+    portrait: '/assets/Resources.png',
   },
 };
 
-const PAGE_ORDER: PageKey[] = ['experience', 'strategy', 'execution', 'ai', 'marketing'];
+const PAGE_ORDER: PageKey[] = [
+  'experience',
+  'strategy',
+  'execution',
+  'ai',
+  'marketing',
+  'resources',
+];
 
 /** Portrait shown on the desk. Hovering a dock icon swaps to a matching pose. */
 type HoverKey = 'resume' | 'linkedin' | 'phone' | 'email';
@@ -122,6 +171,12 @@ const MAGIC_STARS: MagicStar[] = [
   { bottom: '-0.7em', right: '10%', size: '0.44em', dur: '0.9s', delay: '0.28s', rot: '7deg' },
   { bottom: '-0.2em', right: '-0.8em', size: '0.48em', dur: '0.95s', delay: '0.15s', rot: '5deg' },
 ];
+
+/** Fade-out leg of the portrait swap when a page closes. Must stay in sync
+ *  with the .portrait-swapping opacity transition in globals.css, and stay
+ *  well inside the .6s slide home so the fade finishes before the portrait
+ *  lands. */
+const PORTRAIT_SWAP_MS = 260;
 
 /** Availability badge copy + LinkedIn destination. */
 const BADGE_TEXT = 'Now looking to join a talented team!';
@@ -208,6 +263,8 @@ export default function App() {
   // Touch devices have no hover, so a tap on a dock icon drives the blue hint
   // label instead. Kept separate from `hover` so it doesn't swap the hero pose.
   const [tapped, setTapped] = useState<HoverKey | null>(null);
+  // Hovering a nav option previews that page's portrait (if it has one).
+  const [navHover, setNavHover] = useState<PageKey | null>(null);
 
   // First-load intro: portrait → dock/nav → hand-written bio → sparkles. Once
   // it has played, the flag flips so returning from a page renders everything
@@ -291,7 +348,10 @@ export default function App() {
   // up into the dark portrait, where multiply would hide it.
   const hintRef = useRef<HTMLDivElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
-  const [hintPos, setHintPos] = useState({ right: 0, bottom: 0 });
+  const [hintPos, setHintPos] = useState<{ left?: number; right?: number; bottom: number }>({
+    right: 0,
+    bottom: 0,
+  });
 
   useLayoutEffect(() => {
     const compute = () => {
@@ -301,28 +361,34 @@ export default function App() {
       const dispW = PORTRAIT_W * fit * PAPER.scale;
       const dispH = PORTRAIT_H * fit * PAPER.scale;
 
-      // Natural spot: pinned to the photo's bottom-right corner, sitting just
-      // below the photo so it's over paper.
-      const naturalRight = (W - dispW) / 2 - 8;
+      // Natural spot: pinned to the photo's bottom corner, sitting just below
+      // the photo so it's over paper. The inset is the same measured from
+      // either side, so one number serves both.
+      const natural = (W - dispW) / 2 - 8;
       const bottom = (H - dispH) / 2 - 58;
 
-      // Don't let the hint's left edge cross into the centred dock. Measure the
-      // dock and the hint's actual width (varies per label) for an exact floor.
+      // Don't let the hint cross into the centred dock. Measure the dock and
+      // the hint's actual width (varies per label) for an exact floor. The dock
+      // is centred, so its inset from either viewport edge is identical and the
+      // clamp is the same on both sides.
       const hintW = hintRef.current?.offsetWidth ?? 0;
       const dockW = dockRef.current?.offsetWidth ?? 0;
-      const dockRightFromEdge = (W - dockW) / 2; // dock's right edge → viewport right
+      const dockFromEdge = (W - dockW) / 2;
       const gap = 20;
-      // Largest `right` (px from viewport right) that still keeps
-      // hint.left ≥ dock.right + gap.
-      const maxRight = dockRightFromEdge - gap - hintW;
-      const right = Math.min(naturalRight, maxRight);
+      const inset = Math.min(natural, dockFromEdge - gap - hintW);
 
-      setHintPos({ right, bottom });
+      // With a page open the photo's bottom-right corner is buried under the
+      // content card — and the gap between dock and card (143px at 1400x900) is
+      // narrower than the widest label ("MY RESUME", 154px), so no amount of
+      // nudging fits it there. Mirror to the bottom-left, where the paper left
+      // of the dock is clear. The docked shift itself is CSS, alongside the
+      // portrait's and the dock's.
+      setHintPos(page && !isStacked ? { left: inset, bottom } : { right: inset, bottom });
     };
     compute();
     window.addEventListener('resize', compute);
     return () => window.removeEventListener('resize', compute);
-  }, [hover]);
+  }, [hover, page, isStacked]);
 
   const nameRow1 = useMemo(() => ink('(MISA)', 92, 3.7, ''), []);
   const nameRow2 = useMemo(() => ink('Escalera', 32, 8.2, 'Eea'), []);
@@ -375,8 +441,40 @@ export default function App() {
   }, [badgeDelay]);
 
   const p = page ? PAGES[page] : null;
-  // The hero pose only swaps on desktop hover; on mobile it stays the default.
-  const photoSrc = !isStacked && hover ? PHOTOS[hover] : '/assets/misa.png';
+  // Portrait source, in priority order: an open page's own portrait (e.g. the
+  // About-me photo), then the desktop hover pose, then the default. On mobile
+  // the hero pose stays the default.
+  const navPortrait = !isStacked && navHover ? PAGES[navHover].portrait : undefined;
+  // Dock hover outranks the open page's photo so the portrait keeps answering
+  // the contact icons while a page is up (the dock sits under it there). The
+  // pose reverts to the page's own photo on leave. Nav hover and dock hover are
+  // mutually exclusive in practice, so their relative order is immaterial.
+  const hoverPose = !isStacked && hover ? PHOTOS[hover] : undefined;
+  const photoSrc = hoverPose ?? p?.portrait ?? navPortrait ?? '/assets/misa.png';
+
+  // Closing a page swaps the photo back to the default pose in a single frame,
+  // which cuts hard against the .6s slide home. `shownSrc` lags `photoSrc` so
+  // the swap can happen under cover of a fade: out, exchange, back in. Only
+  // page closes get this — hover swaps fire in quick succession while skimming
+  // the menu, and fading each one would read as a flicker.
+  const [shownSrc, setShownSrc] = useState(photoSrc);
+  const [swapping, setSwapping] = useState(false);
+  const prevPage = useRef(page);
+  useEffect(() => {
+    const closing = prevPage.current !== null && page === null;
+    prevPage.current = page;
+    if (!closing) {
+      setShownSrc(photoSrc);
+      return;
+    }
+    setSwapping(true);
+    const t = setTimeout(() => {
+      setShownSrc(photoSrc);
+      setSwapping(false);
+    }, PORTRAIT_SWAP_MS);
+    return () => clearTimeout(t);
+  }, [page, photoSrc]);
+
   // The blue hint reads hover on desktop, the last-tapped icon on mobile.
   const hintKey = isStacked ? tapped : hover;
 
@@ -387,6 +485,27 @@ export default function App() {
       onTouchStart={onScreenTouchStart}
       onTouchEnd={onScreenTouchEnd}
     >
+      {/* Exact inverse of the paper shader's image darkening. The shader adds
+          `.6 * pow(contrast, .4) * (res - .7)` to every image pixel, where
+          `res` is normalize(vec3(normal, 9.5 - 9*pow(contrast,.1))) · normalize(vec3(1,2,1)).
+          On flat paper `normal` is zero, so res = 1/sqrt(6) = .40825 and the
+          term is a constant negative offset:
+            .6 * pow(.15,.4) * (.40825 - .7) = .6 * .46823 * -.29175 = -.08196
+          A linear transfer with slope 1 adds that back exactly — unlike
+          brightness(), which scales and so can't invert an additive shift.
+          color-interpolation-filters must be sRGB: SVG filters default to
+          linearRGB, but the shader's offset lands in gamma space. */}
+      <svg width="0" height="0" aria-hidden="true" focusable="false" style={{ position: 'absolute' }}>
+        <defs>
+          <filter id="portrait-lift" colorInterpolationFilters="sRGB">
+            <feComponentTransfer>
+              <feFuncR type="linear" slope="1" intercept={PAPER_IMAGE_LIFT} />
+              <feFuncG type="linear" slope="1" intercept={PAPER_IMAGE_LIFT} />
+              <feFuncB type="linear" slope="1" intercept={PAPER_IMAGE_LIFT} />
+            </feComponentTransfer>
+          </filter>
+        </defs>
+      </svg>
       {/* Procedural paper background */}
       <div className="paper-bg">
         <PaperTexture
@@ -400,18 +519,15 @@ export default function App() {
           In the stacked layout the portrait moves into the profile slide below. */}
       {!isStacked && (
         <div
-          className={`portrait${introPlayed ? '' : ' portrait-intro'}`}
-          style={{
-            opacity: page ? 0 : 1,
-            transition: 'opacity .55s ease',
-            pointerEvents: 'none',
-          }}
+          className={`portrait${introPlayed ? '' : ' portrait-intro'}${
+            page ? ' portrait-docked' : ''
+          }${swapping ? ' portrait-swapping' : ''}`}
+          style={{ pointerEvents: 'none' }}
         >
           <PaperTexture
             {...PAPER}
-            image={photoSrc}
-            colorBack="#ffffff"
-            colorFront={PAPER_COLOR}
+            image={shownSrc}
+            {...PAPER_OVER_BG}
             style={{ width: '100%', height: '100%' }}
           />
         </div>
@@ -438,14 +554,24 @@ export default function App() {
         </filter>
       </svg>
 
-      {!page && (
-        <div className={`home${introPlayed ? '' : ' intro'}`}>
+      <div className={`home${introPlayed ? '' : ' intro'}${page ? ' has-page' : ''}`}>
           {/* ── Slide 1: name · portrait · summary ─────────────────────────
               On wide screens .stage is display:contents, so these keep their
               absolute desk positions; in the stacked layout the stage becomes a
               crossfading full-viewport slide. */}
           <div className="stage stage-profile">
-            <div className="name">
+            {/* Doubles as the way home: the name is the one desk element that
+                survives an open page, so clicking it closes back to the desk.
+                A no-op on the desk itself. */}
+            <a
+              className="name"
+              href="#home"
+              aria-label="Back to the desk"
+              onClick={(e) => {
+                e.preventDefault();
+                setPage(null);
+              }}
+            >
               <div style={{ display: 'flex', alignItems: 'flex-end' }}>
                 <div style={{ display: 'flex' }}>
                   {nameRow1.map((ch, i) => (
@@ -465,7 +591,7 @@ export default function App() {
                   <div className="tagline">product leader</div>
                 </div>
               </div>
-            </div>
+            </a>
 
             {/* Portrait hero + its bottom-right greeting. .hero-wrap is a
                 display:contents passthrough on wide screens (the hint keeps its
@@ -480,8 +606,7 @@ export default function App() {
                     {...PAPER}
                     scale={0.98}
                     image={photoSrc}
-                    colorBack="#ffffff"
-                    colorFront={PAPER_COLOR}
+                    {...PAPER_OVER_BG}
                     style={{ width: '100%', height: '100%' }}
                   />
                 </div>
@@ -490,10 +615,18 @@ export default function App() {
               {/* Blue greeting / contact label. Pinned to the photo's
                   bottom-right (mobile) or JS-positioned near the portrait
                   (desktop). Text follows hover (desktop) or last-tapped icon. */}
+              {/* On the desk the label is always up (it doubles as the "HI :)"
+                  greeting). With a page open the desk copy is gone, so it
+                  surfaces only while a dock icon is hovered — a greeting parked
+                  next to the docked portrait would read as a leftover. */}
               <div
                 ref={hintRef}
-                className="contact-hint is-on"
-                style={isStacked ? undefined : { right: hintPos.right, bottom: hintPos.bottom }}
+                className={`contact-hint${!page || hintKey ? ' is-on' : ''}`}
+                style={
+                  isStacked
+                    ? undefined
+                    : { left: hintPos.left, right: hintPos.right, bottom: hintPos.bottom }
+                }
                 aria-hidden
               >
                 {hintKey ? HOLO_LABELS[hintKey] : 'HI :)'}
@@ -559,7 +692,12 @@ export default function App() {
 
           {/* ── Slide 2: the navigation menu ─────────────────────────────── */}
           <div className="stage stage-menu">
-            <nav className="nav">
+            {/* Clearing the preview is the nav's job, not each item's: the list
+                has a 12–22px flex gap, so per-item onMouseLeave would reset to
+                the default photo every time the cursor crossed between two
+                options. The gaps sit inside this element, so skimming the menu
+                never leaves it and the preview only resets on the way out. */}
+            <nav className="nav" onMouseLeave={() => setNavHover(null)}>
               {PAGE_ORDER.map((key) => (
                 <a
                   key={key}
@@ -569,6 +707,7 @@ export default function App() {
                     e.preventDefault();
                     setPage(key);
                   }}
+                  onMouseEnter={() => setNavHover(key)}
                 >
                   <span className="nav-bullet">&#8226;</span>
                   {PAGES[key].label}
@@ -665,11 +804,12 @@ export default function App() {
             </span>
             <span className="slide-hint-label">{slide === 0 ? 'menu' : 'profile'}</span>
           </div>
-        </div>
-      )}
+      </div>
 
+      {/* Content panel: a right-side white card on the wide desk (the portrait
+          slides left to make room), or the full-screen page on the stacked view. */}
       {p && (
-        <div className="page" key={page}>
+        <div className={isStacked ? 'page' : 'page-card'} key={page}>
           <a
             href="#home"
             className="back-link"

@@ -63,6 +63,20 @@ a:hover {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+
+  /* ── Docked-page geometry (wide layout) ──
+     The portrait is contain-fit + scaled, so its rendered width is driven by
+     viewport HEIGHT: half-width ≈ 24.13vh, full ≈ 48.27vh. The card is sized to
+     at least match that width; the portrait slide + card offset (below) are
+     derived from these so the portrait+card sit as one CENTRED pair at any
+     landscape size, with no overlap. The final min() clamps the card to the
+     available space so the pair never overflows near the stacked breakpoint. */
+  --photo-w: 48.27vh;
+  --card-gap: clamp(24px, 3vw, 52px);
+  --card-w: min(
+    clamp(360px, max(var(--photo-w), 44vw), 760px),
+    calc(96vw - var(--photo-w) - var(--card-gap))
+  );
 }
 
 /* Full-screen paper + portrait shader layers (moved off inline styles so the
@@ -71,6 +85,34 @@ a:hover {
 .portrait {
   position: absolute;
   inset: 0;
+}
+
+/* Moved off the inline style so .portrait-swapping can override the opacity
+   leg — an inline transition would otherwise win on specificity. */
+.portrait {
+  transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.55s ease;
+}
+
+/* Closing a page returns the portrait to the default pose. Swapping the shader's
+   source is instantaneous, so it cuts hard against the .6s slide home; instead
+   the portrait fades out, exchanges the photo while it is invisible, and fades
+   back in. Timing mirrors PORTRAIT_SWAP_MS in App.tsx. Applied only on page
+   close — see the note there on why hover swaps stay instant. */
+.portrait-swapping {
+  opacity: 0;
+  /* Transform is restated, not inherited: this shorthand replaces the one on
+     .portrait wholesale, and dropping the transform leg would snap the portrait
+     home instead of sliding it — the opposite of the point. */
+  transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.26s ease;
+}
+
+/* The paper shader always darkens its source image by a constant additive
+   offset (about -.08 at contrast .15). #portrait-lift in App.tsx adds it back
+   exactly; see the derivation there. Scoped to the photo-bearing shaders on
+   purpose: .paper-bg has no image and needs no correction. */
+.portrait [data-paper-shader],
+.portrait-hero [data-paper-shader] {
+  filter: url(#portrait-lift);
 }
 
 /* Layout stages are transparent wrappers on wide screens — their children keep
@@ -102,6 +144,13 @@ a:hover {
   transform: rotate(-6deg); /* the "6 degree" desk tilt */
   transform-origin: left top;
   filter: url(#inkgrain);
+  /* It's an <a> (the way back to the desk) — keep it looking like lettering.
+     width:max-content stops the absolutely-positioned link from stretching and
+     leaving dead clickable space to the right of the words. */
+  width: max-content;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
 }
 
 .tagline {
@@ -188,6 +237,82 @@ a:hover {
   50% {
     opacity: 1;
     transform: rotate(var(--rot, 0deg)) scale(1.05);
+  }
+}
+
+/* ---------- Docked portrait + right-side content card (wide layout) ----------
+   Opening a page slides the full-screen portrait left, crossfades the desk copy
+   out, and floats a white card in on the right to hold that page's content. */
+
+/* Slide left by half the (gap + card width): this places the portrait's centre
+   exactly where a centred portrait+card pair requires, so the two straddle the
+   page centre with `--card-gap` between them (see the geometry note on .screen). */
+.portrait-docked {
+  transform: translateX(calc((var(--card-gap) + var(--card-w)) * -0.5));
+}
+
+/* The dock rides along with the docked portrait so it stays centred under the
+   photo instead of drifting toward the card. Same offset as .portrait-docked,
+   added to the dock's own -50% centring — deriving it from the shared vars
+   keeps the two aligned at any viewport size. It already sits below the photo
+   (contain-fit at scale .72 puts the bottom edge at 14vh), so only the
+   horizontal needs adjusting. */
+.home.has-page .dock {
+  transform: translateX(calc(-50% - (var(--card-gap) + var(--card-w)) * 0.5));
+}
+
+/* Desk elements fade for the content view; transitions here also power the
+   fade back in when returning to the desk. */
+.summary,
+.nav,
+.contact-hint {
+  transition: opacity 0.45s ease;
+}
+
+.home.has-page .summary,
+.home.has-page .nav,
+.home.has-page .badge {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The hint is no longer forced off here — it rides along with the docked
+   portrait so the dock's hover labels still land beside the photo. Visibility
+   is left to .is-on, which App.tsx withholds unless an icon is hovered while a
+   page is open. Same offset as .portrait-docked; the base rotation has to be
+   restated because this shorthand replaces it. */
+.home.has-page .contact-hint {
+  transform: translateX(calc((var(--card-gap) + var(--card-w)) * -0.5)) rotate(-5deg);
+}
+
+.page-card {
+  position: absolute;
+  top: clamp(40px, 8vh, 96px);
+  bottom: clamp(40px, 8vh, 96px);
+  /* Right half of the centred pair: photo's right edge + the gap. Together with
+     .portrait-docked this keeps equal margins on both sides at any size. */
+  left: calc(50vw + var(--photo-w) / 2 + var(--card-gap) / 2 - var(--card-w) / 2);
+  width: var(--card-w);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: clamp(32px, 4vw, 56px);
+  background: #ffffff;
+  border-radius: 28px;
+  box-shadow: 0 24px 60px rgba(31, 38, 74, 0.16), 0 2px 10px rgba(31, 38, 74, 0.08);
+  overflow-y: auto;
+  z-index: 4;
+  animation: cardin 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes cardin {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
@@ -293,6 +418,10 @@ a:hover {
   mix-blend-mode: multiply;
   z-index: 2;
   isolation: isolate;
+  /* Supersedes the grouped `transition: opacity` above (same specificity, later
+     in the file), so opacity is restated here. Transform matches .portrait so
+     the label glides with the photo if a page opens while it is showing. */
+  transition: opacity 0.45s ease, transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .contact-hint.is-on {
@@ -307,6 +436,8 @@ a:hover {
   left: 50%;
   bottom: clamp(18px, 4vh, 42px);
   transform: translateX(-50%);
+  /* Matches .portrait so the two travel together when a page opens/closes. */
+  transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
   display: flex;
   align-items: center;
   gap: 0;
@@ -371,7 +502,7 @@ a:hover {
   height: clamp(172px, 16vw, 224px);
   transform: rotate(-6deg); /* the "6 degree" tilt, matching the rest of the desk */
   transform-origin: center;
-  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.3, 1);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.3, 1), opacity 0.45s ease;
   perspective: 700px;
   filter: drop-shadow(0 12px 22px rgba(60, 42, 0, 0.32));
   cursor: pointer;
@@ -513,12 +644,13 @@ a:hover {
 
 /* ---------- Stacked layout: portrait / narrow / mobile ----------
    The three-column desk needs a landscape aspect ratio. Once the window is
-   portrait-ish (≤ 1:1) or narrow (≤ 900px) it becomes a no-scroll deck of two
+   portrait-ish (≤ 1:1) or narrow (≤ 1100px) it becomes a no-scroll deck of two
    crossfading slides — slide 0: name · portrait · summary; slide 1: the nav
    menu — flipped by wheel / swipe. The contact dock is a fixed left rail; the
-   "open to work" badge is dropped. Slide state lives on .screen (.slide-0/1). */
+   "open to work" badge is dropped. Slide state lives on .screen (.slide-0/1).
+   NOTE: this width must stay in sync with STACK_MQ in App.tsx. */
 
-@media (max-width: 900px), (max-aspect-ratio: 1/1) {
+@media (max-width: 1100px), (max-aspect-ratio: 1/1) {
   html,
   body,
   #root {
@@ -542,9 +674,15 @@ a:hover {
     z-index: -1;
   }
 
-  /* .home is just a passthrough here — the slides position themselves. */
+  /* .home is just a passthrough here — the slides position themselves. On the
+     stacked view the desk is fully hidden while a page is open (the full-screen
+     .page takes over); the wide-only slide-left/card behaviour doesn't apply. */
   .home {
     display: contents;
+  }
+
+  .home.has-page {
+    display: none;
   }
 
   /* Each slide is a full-viewport layer; only one is opaque at a time. Left
@@ -651,6 +789,20 @@ a:hover {
     padding: clamp(8px, 2vw, 12px) 6px;
   }
 
+  /* The wide layout centres the dock under the docked portrait with a rule that
+     outranks the one above (two classes vs one). `.home.has-page` is display:none
+     here so it can't bite today, but restate the rail's centring so the
+     horizontal offset can never leak into this layout. */
+  .home.has-page .dock {
+    transform: translateY(-50%);
+  }
+
+  /* Same guard for the hint: the wide layout's docked offset outranks the
+     .hero-wrap rule below, and must not follow it into this layout. */
+  .home.has-page .contact-hint {
+    transform: rotate(-5deg);
+  }
+
   .dock-link {
     height: 40px;
     padding: clamp(8px, 2vw, 12px) 6px;
@@ -714,8 +866,19 @@ a:hover {
     transform: rotate(180deg);
   }
 
+  /* Mobile content view: the portrait is dropped (only the profile slide shows
+     it), and the page reads as a white card floating on the paper — consistent
+     with the desktop card, using the full width since there's no portrait. */
   .page {
-    padding: 48px 28px;
+    inset: clamp(14px, 3vh, 26px) clamp(12px, 4vw, 22px);
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    padding: clamp(24px, 6vw, 40px);
+    background: #ffffff;
+    border-radius: 22px;
+    box-shadow: 0 20px 50px rgba(31, 38, 74, 0.16), 0 2px 8px rgba(31, 38, 74, 0.08);
+    overflow-y: auto;
   }
 }
 
@@ -731,7 +894,8 @@ a:hover {
 
 @media (prefers-reduced-motion: reduce) {
   .home,
-  .page {
+  .page,
+  .page-card {
     animation: none;
   }
   .portrait-intro,
