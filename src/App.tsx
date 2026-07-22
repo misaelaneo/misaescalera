@@ -31,6 +31,14 @@ const PAPER = {
 
 const PAPER_COLOR = '#9fadbc';
 
+/** Placeholder paper tones for the card-title module — final colors TBD by the
+ *  user. These feed the same PaperTexture shader as the desk, so the label reads
+ *  as a real torn-off sheet rather than a flat swatch. */
+const TITLE_PAPER = {
+  colorBack: '#d83a2c', // lit red paper
+  colorFront: '#9e1f14', // darker red in the fibers / fold shadows
+} as const;
+
 /** Colors for the photo-bearing shaders, which sit *on top of* .paper-bg.
  *  Zero alpha on both makes the shader paint only the photo and leave the
  *  surround transparent: the fragment shader ends with
@@ -807,33 +815,59 @@ export default function App() {
       </div>
 
       {/* Content panel: a right-side white card on the wide desk (the portrait
-          slides left to make room), or the full-screen page on the stacked view. */}
+          slides left to make room), or the full-screen page on the stacked view.
+          The page title is NOT inside the card — it's the .card-title module
+          below, a rectangle-backed Magilio label that overlaps and spills off
+          the card's top-right corner. */}
       {p && (
-        <div className={isStacked ? 'page' : 'page-card'} key={page}>
-          <a
-            href="#home"
-            className="back-link"
-            onClick={(e) => {
-              e.preventDefault();
-              setPage(null);
-            }}
-          >
-            &#8592; back to the desk
-          </a>
-          <div className="page-title">{p.title}</div>
-          <div className="page-body">{p.body}</div>
-          {page === 'experience' && (
+        <>
+          <div className={isStacked ? 'page' : 'page-card'} key={page}>
             <a
-              href="https://docs.google.com/document/d/1X7S3SYq6Kx-deva0lSc41CSdRhlYmHB9kca7n2BzM14/edit?usp=sharing"
-              className="resume-btn"
-              target="_blank"
-              rel="noreferrer"
+              href="#home"
+              className="back-link"
+              onClick={(e) => {
+                e.preventDefault();
+                setPage(null);
+              }}
             >
-              <DownloadIcon />
-              download résumé (google doc)
+              &#8592; back to the desk
             </a>
-          )}
-        </div>
+            <div className="page-body">{p.body}</div>
+            {page === 'experience' && (
+              <a
+                href="https://docs.google.com/document/d/1X7S3SYq6Kx-deva0lSc41CSdRhlYmHB9kca7n2BzM14/edit?usp=sharing"
+                className="resume-btn"
+                target="_blank"
+                rel="noreferrer"
+              >
+                <DownloadIcon />
+                download résumé (google doc)
+              </a>
+            )}
+          </div>
+
+          {/* Title module: a small paper rectangle (PaperTexture shader + CSS
+              fold creases) carrying the Magilio title, straddling the card's
+              top-right corner. Sits in .screen space (not inside the card, whose
+              overflow would clip it) so it can spill outward. */}
+          <div className={`card-title${isStacked ? ' card-title-stacked' : ''}`} key={`title-${page}`}>
+            <div className="card-title-sheet" aria-hidden>
+              <div className="card-title-paper">
+                <PaperTexture
+                  {...PAPER}
+                  crumples={0.1}
+                  folds={0}
+                  colorBack={TITLE_PAPER.colorBack}
+                  colorFront={TITLE_PAPER.colorFront}
+                  style={{ width: '100%', height: '100%' }}
+                />
+              </div>
+              <div className="card-title-grain" />
+            </div>
+            <div className="card-title-creases" aria-hidden />
+            <span className="card-title-text">{p.title}</span>
+          </div>
+        </>
       )}
     </div>
   );

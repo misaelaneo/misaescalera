@@ -6,6 +6,12 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: 'Magilio';
+  src: url('/assets/magilio.ttf') format('truetype');
+  font-display: swap;
+}
+
 *,
 *::before,
 *::after {
@@ -316,6 +322,193 @@ a:hover {
   }
 }
 
+/* ---------- Card title module (wide layout) ----------
+   The page title lives here, not inside the card: a rectangle-backed Magilio
+   label pinned to straddle the card's top-right corner and spill outward (up
+   + right). It sits in .screen space so the card's overflow can't clip it.
+   The two --title-overhang-* knobs control how far it spills past the corner —
+   tune these to taste; --title-tilt is the sticker tilt. */
+.card-title {
+  --title-overhang-x: clamp(18px, 2.4vw, 44px); /* spill past the right edge */
+  --title-overhang-y: clamp(18px, 3.2vh, 42px); /* rise above the top edge */
+  --title-tilt: 4deg;
+
+  position: absolute;
+  z-index: 5; /* above the card (z-index 4) so it reads as overlapping */
+  /* Right edge aligned to the card's right edge, then pushed outward. Mirror of
+     the card's own left/width geometry on .screen — right-of-viewport distance
+     to the card's right edge is 50vw - photo-w/2 - card-gap/2 - card-w/2. */
+  right: calc(
+    50vw - var(--photo-w) / 2 - var(--card-gap) / 2 - var(--card-w) / 2 -
+      var(--title-overhang-x)
+  );
+  /* Top raised above the card's top so the label overlaps down onto it. Card
+     top is clamp(40px, 8vh, 96px). */
+  top: calc(clamp(40px, 8vh, 96px) - var(--title-overhang-y));
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Title size lives here so the padding (em) scales with the text. */
+  font-size: clamp(30px, 3.6vw, 58px);
+  padding: 0.5em 1em;
+  /* The inner .card-title-sheet clips itself to a clean rectangle; this outer
+     box stays `visible` so the lifted-corner shadow pseudo-elements below can
+     peek out past the sheet's bottom edge. */
+  overflow: visible;
+  isolation: isolate; /* keep the layered blends + z-index:-1 shadows self-contained */
+  transform: rotate(var(--title-tilt));
+  transform-origin: center;
+  /* Its own intro (not the card's `cardin`): that one animates `transform` and,
+     with fill `both`, would hold `transform: none` at the end — wiping the tilt.
+     `titlein` bakes the tilt into both keyframes so it survives. */
+  animation: titlein 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  pointer-events: none; /* purely decorative label */
+}
+
+/* Lifted-corner paper shadow — a faithful port of the reference CSS. Two thin,
+   transparent slivers sit behind the sheet (z-index: -1); their blurred
+   box-shadow (no visible body) reads as the paper's bottom corners curling up
+   off the card. skew + opposite rotate gives each corner its lift. They live on
+   the outer .card-title (overflow: visible) so the shadow can peek out below the
+   clipped sheet. Reference px are converted to `em` (÷ ~44px) so they scale with
+   the title. */
+.card-title::before,
+.card-title::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  bottom: 0.2em; /* 10px */
+  width: 40%;
+  height: 0.22em; /* 10px */
+  box-shadow: 0 0.11em 0.32em rgba(0, 0, 0, 0.7); /* 0 5px 14px */
+  transition: all 0.3s ease-in-out;
+}
+
+.card-title::before {
+  left: 0.34em; /* 15px */
+  transform: skew(-5deg) rotate(-5deg);
+}
+
+.card-title::after {
+  right: 0.34em; /* 15px */
+  transform: skew(5deg) rotate(5deg);
+}
+
+@keyframes titlein {
+  from {
+    opacity: 0;
+    transform: rotate(var(--title-tilt)) translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(var(--title-tilt));
+  }
+}
+
+/* The paper "sheet": paper fill + grain, clipped to a clean rectangle. All the
+   depth comes from the lifted-corner shadow on .card-title::before/::after
+   behind this — matching the reference, the sheet itself carries no base shadow. */
+.card-title-sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden; /* clip the paper canvas + grain to the rectangle */
+}
+
+/* Paper texture fill — the same procedural shader as the desk/portraits. */
+.card-title-paper {
+  position: absolute;
+  inset: 0;
+  /* Fallback under the shader (matches TITLE_PAPER.colorBack). */
+  background: #d83a2c;
+}
+
+/* Folded-poster creases, adapted from the reference: translucent black/white
+   linear-gradients (normal blend, so the highlight edge lightens and the shadow
+   edge darkens the paper beneath). One vertical fold + one horizontal fold, both
+   down the middle, so the sheet reads as folded once each way (into quarters).
+   Tune the stops/alphas to make the folds crisper or softer.
+   Sits ABOVE the text (z-index 3 > the text's 2) so the folds fall across the
+   letters too — the title reads as ink printed on the same folded sheet, rather
+   than flat type floating over it. */
+.card-title-creases {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-image:
+    /* horizontal fold across the middle — a soft matte shadow valley with only a
+       whisper of lift on the far side (no bright specular line = not plastic). */
+    linear-gradient(
+      to bottom,
+      transparent 40%,
+      rgba(0, 0, 0, 0.09) 49.5%,
+      rgba(255, 255, 255, 0.05) 51.5%,
+      transparent 60%
+    ),
+    /* vertical fold down the middle */
+    linear-gradient(
+      to right,
+      transparent 40%,
+      rgba(0, 0, 0, 0.09) 49.5%,
+      rgba(255, 255, 255, 0.05) 51.5%,
+      transparent 60%
+    );
+}
+
+/* Fine paper grain across the sheet. An inline feTurbulence noise tile,
+   desaturated to grey (feColorMatrix) and blended with overlay so it speckles
+   light + dark without shifting the paper's hue. Sits on the paper, under the
+   ink (z-index 1) — a surface texture, not an ink effect. Overlay leaves the
+   pure-white letters untouched. Tune `opacity` for more/less tooth. */
+.card-title-grain {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.4;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0.33 0.33 0.33 0 0 0.33 0.33 0.33 0 0 0.33 0.33 0.33 0 0 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 140px 140px;
+}
+
+.card-title-text {
+  position: relative;
+  z-index: 2; /* above the paper + grain, below the creases so folds cross the letters */
+  font-family: 'Magilio', 'Space Mono', monospace;
+  font-size: 1em; /* = the module's font-size (drives the em padding above) */
+  line-height: 1;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  color: #ffffff;
+}
+
+/* Grain on the letters themselves. Overlay grain (on .card-title-grain) can't
+   touch pure-white text, so instead we fill the glyphs via background-clip:text
+   with two layers: a SPARSE dark noise tile over a solid white base — the noise
+   speckles the white ink with fine tooth, clipped to the letter shapes. The
+   negative offset in the feColorMatrix alpha row (-0.7) is what keeps the text
+   bright: it clamps the low-noise majority of the tile to zero alpha (pure
+   white), so only the noise peaks show as specks instead of a grey veil that
+   would dim the whole glyph. Guarded by @supports so unsupported browsers keep
+   the solid white above.
+   Tuning: the alpha row is `slope slope slope 0 offset` (0.55 … -0.95). More
+   negative offset = brighter/sparser; larger slope = darker specks. */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .card-title-text {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='tg'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.55 0.55 0.55 0 -0.95'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23tg)'/%3E%3C/svg%3E"),
+      linear-gradient(#ffffff, #ffffff);
+    background-size: 120px 120px, 100% 100%;
+    background-repeat: repeat, no-repeat;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+}
+
 /* ---------- First-load intro ----------
    Portrait fades in, dock + nav follow, then the bio hand-writes itself.
    Durations/delays mirror the INTRO_* constants in App.tsx. */
@@ -613,11 +806,6 @@ a:hover {
   color: #1c1a17;
 }
 
-.page-title {
-  font: 700 32px/1.2 'Space Mono', monospace;
-  color: #1c1a17;
-}
-
 .page-body {
   font: 400 18px/1.8 'Space Mono', monospace;
   color: #33302b;
@@ -879,6 +1067,25 @@ a:hover {
     border-radius: 22px;
     box-shadow: 0 20px 50px rgba(31, 38, 74, 0.16), 0 2px 8px rgba(31, 38, 74, 0.08);
     overflow-y: auto;
+  }
+
+  /* Title module on the stacked view: same straddle-the-top-right-corner idea,
+     but anchored to the full-width .page card's inset instead of the wide
+     layout's photo/card geometry. Overhang is smaller so it never runs off the
+     narrow viewport. */
+  .card-title-stacked {
+    --title-overhang-x: clamp(6px, 3vw, 16px);
+    --title-overhang-y: clamp(14px, 2.6vh, 26px);
+    right: calc(clamp(12px, 4vw, 22px) - var(--title-overhang-x));
+    top: calc(clamp(14px, 3vh, 26px) - var(--title-overhang-y));
+    z-index: 5;
+    max-width: 84vw;
+    font-size: clamp(26px, 8vw, 44px); /* padding scales with this */
+  }
+
+  .card-title-stacked .card-title-text {
+    white-space: normal;
+    text-align: center;
   }
 }
 
